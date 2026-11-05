@@ -233,7 +233,7 @@ function showTab(tab) {
 $$('#tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
 
 async function loadMeta() {
-  META = await api('/api/meta', null, {});
+  META = await api('api/meta', null, {});
   const st = META.collector || {};
   const el = $('#status');
   el.className = 'status' + (st.last_error ? ' err' : (st.backfilling || st.regroup_pending) ? ' busy' : '');
@@ -278,9 +278,9 @@ renderers.overview = async seq => {
   $('#ov-split').value = state.ovSplit;
   const m = state.metric;
   const [sum, ts, cats, heat, svc, sites] = await Promise.all([
-    api('/api/summary'), api('/api/timeseries', { metric: m, split: state.ovSplit }),
-    api('/api/top', { by: 'category', sort: m, limit: 30 }), api('/api/heatmap', { metric: m }),
-    api('/api/top', { by: 'service', sort: m, limit: 15 }), api('/api/top', { by: 'site', sort: m, limit: 30 }),
+    api('api/summary'), api('api/timeseries', { metric: m, split: state.ovSplit }),
+    api('api/top', { by: 'category', sort: m, limit: 30 }), api('api/heatmap', { metric: m }),
+    api('api/top', { by: 'service', sort: m, limit: 15 }), api('api/top', { by: 'site', sort: m, limit: 30 }),
   ]);
   if (stale(seq)) return;
   kpiCards($('#kpis'), sum.current, sum.previous, sum.days);
@@ -307,8 +307,8 @@ $('#ov-split').onchange = e => { state.ovSplit = e.target.value; changed(); };
 // ---------------------------------------------------------------- people
 renderers.people = async seq => {
   const [bd, ins, ts] = await Promise.all([
-    api('/api/breakdown', { rows: 'person', cols: 'category', metric: 'minutes', limit: 14 }),
-    api('/api/insights'), api('/api/timeseries', { metric: 'minutes', split: 'person', top: 100, bucket: 'day' }),
+    api('api/breakdown', { rows: 'person', cols: 'category', metric: 'minutes', limit: 14 }),
+    api('api/insights'), api('api/timeseries', { metric: 'minutes', split: 'person', top: 100, bucket: 'day' }),
   ]);
   if (stale(seq)) return;
   if (bd.rows.length) {
@@ -385,8 +385,8 @@ renderers.compare = async seq => {
   if (state.cmpMode === 'people') {
     $('#cmp-hint').textContent = state.persons.length >= 2 ? '' : 'Tip: pick persons in the filter bar to compare a subset.';
     const [bd, ts] = await Promise.all([
-      api('/api/breakdown', { rows: 'person', cols: by, metric: m, limit: 14 }),
-      api('/api/timeseries', { metric: m, split: 'person', top: 20 }),
+      api('api/breakdown', { rows: 'person', cols: by, metric: m, limit: 14 }),
+      api('api/timeseries', { metric: m, split: 'person', top: 20 }),
     ]);
     if (stale(seq)) return;
     if (!bd.rows.length) { empty('cmp-bars'); empty('cmp-trend'); $('#cmp-table').innerHTML = ''; return; }
@@ -406,10 +406,10 @@ renderers.compare = async seq => {
     const b = periodB();
     $('#cmp-b-preset').value = state.cmpB; $('#cmp-b-start').value = b.start; $('#cmp-b-end').value = b.end;
     const [ba, bb, ta, tb] = await Promise.all([
-      api('/api/breakdown', { rows: 'none', cols: by, metric: m, limit: 30 }),
-      api('/api/breakdown', { rows: 'none', cols: by, metric: m, limit: 30, start: b.start, end: b.end }),
-      api('/api/timeseries', { metric: m, bucket: 'day' }),
-      api('/api/timeseries', { metric: m, bucket: 'day', start: b.start, end: b.end }),
+      api('api/breakdown', { rows: 'none', cols: by, metric: m, limit: 30 }),
+      api('api/breakdown', { rows: 'none', cols: by, metric: m, limit: 30, start: b.start, end: b.end }),
+      api('api/timeseries', { metric: m, bucket: 'day' }),
+      api('api/timeseries', { metric: m, bucket: 'day', start: b.start, end: b.end }),
     ]);
     if (stale(seq)) return;
     const mapB = {};
@@ -467,7 +467,7 @@ $('#ex-target').oninput = e => {
   const q = e.target.value.trim();
   siteLookupTimer = setTimeout(async () => {
     if (q.length < 2) return;
-    const r = await api('/api/sites', { q, limit: 20, hide_bg: false, categories: [], start: META.first_day || state.start });
+    const r = await api('api/sites', { q, limit: 20, hide_bg: false, categories: [], start: META.first_day || state.start });
     $('#ex-options').innerHTML = r.rows.map(s => `<option value="${esc(s.name)}">`).join('');
   }, 250);
 };
@@ -484,8 +484,8 @@ renderers.explore = async seq => {
   }
   const m = state.metric, xf = exploreFilter();
   const [sum, ts, heat, persons, sites] = await Promise.all([
-    api('/api/summary', xf), api('/api/timeseries', { ...xf, metric: m, split: 'person' }), api('/api/heatmap', { ...xf, metric: m }),
-    api('/api/top', { ...xf, by: 'person', sort: m }), api('/api/top', { ...xf, by: 'site', sort: m, limit: 50 }),
+    api('api/summary', xf), api('api/timeseries', { ...xf, metric: m, split: 'person' }), api('api/heatmap', { ...xf, metric: m }),
+    api('api/top', { ...xf, by: 'person', sort: m }), api('api/top', { ...xf, by: 'site', sort: m, limit: 50 }),
   ]);
   if (stale(seq)) return;
   kpiCards($('#ex-kpis'), sum.current, sum.previous, sum.days);
@@ -506,7 +506,7 @@ renderers.explore = async seq => {
 renderers.timeline = async seq => {
   if (!state.tlDay || state.tlDay > state.end || state.tlDay < state.start) state.tlDay = state.end;
   $('#tl-day').value = state.tlDay; $('#tl-split').value = state.tlSplit;
-  const tl = await api('/api/timeline', { day: state.tlDay, split: state.tlSplit, top: 20 });
+  const tl = await api('api/timeline', { day: state.tlDay, split: state.tlSplit, top: 20 });
   if (stale(seq)) return;
   if (!tl.available) return empty('tl-chart', 'Hour-level detail for this day has expired (retention).');
   if (!tl.rows.length) return empty('tl-chart', 'No activity on this day');
@@ -540,13 +540,13 @@ $('#tl-next').onclick = () => { state.tlDay = addDays(state.tlDay, 1); if (state
 // ---------------------------------------------------------------- sites
 const PAGE = 100;
 async function setCategory(site, category, service) {
-  await send('POST', '/api/rules', { pattern: site, category, service: service || null });
+  await send('POST', 'api/rules', { pattern: site, category, service: service || null });
   toast(`${site} → ${category}. Re-categorizing history in the background.`);
   await loadMeta();
 }
 renderers.sites = async seq => {
   const [res, nw] = await Promise.all([
-    api('/api/sites', { sort: state.stSort, limit: PAGE, offset: state.stPage * PAGE }), api('/api/new_sites', { limit: 100 }),
+    api('api/sites', { sort: state.stSort, limit: PAGE, offset: state.stPage * PAGE }), api('api/new_sites', { limit: 100 }),
   ]);
   if (stale(seq)) return;
   const pages = Math.max(1, Math.ceil(res.total / PAGE));
@@ -570,7 +570,7 @@ $('#st-next').onclick = () => { state.stPage += 1; changed(); };
 
 // ---------------------------------------------------------------- dns
 renderers.dns = async seq => {
-  const d = await api('/api/dns');
+  const d = await api('api/dns');
   if (stale(seq)) return;
   const pie = rows => ({ tooltip: { trigger: 'item', valueFormatter: v => nf.format(v) }, legend: { type: 'scroll', orient: 'vertical', right: 0, top: 'middle' },
     series: [{ type: 'pie', radius: ['40%', '72%'], center: ['35%', '50%'], label: { show: false }, data: rows.map(([name, value]) => ({ name, value })) }] });
@@ -592,7 +592,7 @@ renderers.dns = async seq => {
 // ---------------------------------------------------------------- settings
 renderers.settings = async seq => {
   await loadMeta();
-  const rules = await api('/api/rules', null, {});
+  const rules = await api('api/rules', null, {});
   if (stale(seq)) return;
   const pt = table($('#persons-table'), [
     { t: 'Name', f: p => `<input data-f="name" value="${esc(p.name)}" maxlength="64" aria-label="Name">` },
@@ -604,14 +604,14 @@ renderers.settings = async seq => {
     const p = META.persons[i];
     if (!p) return;
     $$('input', tr).forEach(inp => inp.onchange = async () => {
-      await send('PUT', `/api/persons/${p.id}`, { name: $('[data-f=name]', tr).value, color: $('[data-f=color]', tr).value });
+      await send('PUT', `api/persons/${p.id}`, { name: $('[data-f=name]', tr).value, color: $('[data-f=color]', tr).value });
       toast('Saved'); await loadMeta(); buildFilters();
     });
   });
   $$('button[data-del]', pt).forEach(b => b.onclick = async () => {
     const p = META.persons.find(x => x.id === +b.dataset.del);
     if (!confirm(`Delete person "${p.name}"? Their devices become unassigned; no traffic data is deleted.`)) return;
-    await send('DELETE', `/api/persons/${p.id}`);
+    await send('DELETE', `api/persons/${p.id}`);
     state.persons = state.persons.filter(x => x !== p.id);
     await loadMeta(); buildFilters(); refresh();
   });
@@ -629,7 +629,7 @@ renderers.settings = async seq => {
     if (!c) return;
     $$('input,select', tr).forEach(inp => inp.onchange = async () => {
       const pid = $('[data-f=person]', tr).value;
-      await send('PUT', `/api/clients/${c.id}`, { label: $('[data-f=label]', tr).value, person_id: pid ? +pid : null });
+      await send('PUT', `api/clients/${c.id}`, { label: $('[data-f=label]', tr).value, person_id: pid ? +pid : null });
       toast('Saved'); await loadMeta(); buildFilters();
     });
   });
@@ -640,7 +640,7 @@ renderers.settings = async seq => {
   const rt = table($('#rules-table'), [{ t: 'Pattern', k: 'pattern' }, { t: 'Category', f: r => catTag(r.category) }, { t: 'Service', k: 'service' },
     { t: '', f: r => `<button data-pat="${esc(r.pattern)}">Remove</button>` }], rules.rules);
   $$('button[data-pat]', rt).forEach(b => b.onclick = async () => {
-    await send('DELETE', `/api/rules/${encodeURIComponent(b.dataset.pat)}`); toast('Rule removed'); refresh();
+    await send('DELETE', `api/rules/${encodeURIComponent(b.dataset.pat)}`); toast('Rule removed'); refresh();
   });
   $('#collector-info').textContent = JSON.stringify({ ...META.collector, adguard_url: META.adguard_url, timezone: META.timezone,
     data_from: META.first_day, hour_detail_since: META.hourly_since }, null, 2);
@@ -648,13 +648,13 @@ renderers.settings = async seq => {
 $('#person-form').onsubmit = async e => {
   e.preventDefault();
   const fd = new FormData(e.target);
-  await send('POST', '/api/persons', { name: fd.get('name'), color: fd.get('color') });
+  await send('POST', 'api/persons', { name: fd.get('name'), color: fd.get('color') });
   e.target.reset(); toast('Person added'); await loadMeta(); buildFilters(); refresh();
 };
 $('#rule-form').onsubmit = async e => {
   e.preventDefault();
   const fd = new FormData(e.target);
-  await send('POST', '/api/rules', { pattern: fd.get('pattern'), category: fd.get('category'), service: fd.get('service') || null });
+  await send('POST', 'api/rules', { pattern: fd.get('pattern'), category: fd.get('category'), service: fd.get('service') || null });
   e.target.reset(); toast('Rule saved; re-categorizing history'); refresh();
 };
 

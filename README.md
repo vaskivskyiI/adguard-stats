@@ -105,6 +105,24 @@ For a rootless boot start, also run `loginctl enable-linger $USER` once.
 If AdGuard Home runs on the same host, use `ADGUARD_URL=http://host.containers.internal:3000`
 (replace the port with your AdGuard web port).
 
+### Behind a reverse proxy
+
+The dashboard works at the domain root or under a path prefix. For nginx under `/stats/`, with
+`HOST_PORT=8085` and `HOST_BIND=127.0.0.1` in `.env` (so the port is only reachable through nginx):
+
+```nginx
+location = /stats { return 301 /stats/; }
+location /stats/ {
+    proxy_pass http://127.0.0.1:8085/;   # trailing slash: strips /stats/ before forwarding
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+Put the `/stats/` locations before a catch-all `location /` that serves AdGuard Home.
+
 AdGuard Home requirements:
 - The query log must be enabled. The collector can only import what the query log still holds, so
   on first start it backfills whatever retention you have configured (for example the last 7 days).
