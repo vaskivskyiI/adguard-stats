@@ -1,10 +1,13 @@
 """SQLite storage.
 
 Layout (all aggregate tables are WITHOUT ROWID, keyed by time first):
-  hourly      (hour, client, domain) -> queries, blocked, slots   slots = 12-bit mask of active 5-minute slots
-  daily       (day, client, domain)  -> queries, blocked, active  active = number of active 5-minute slots
-  group_hourly(hour, client, kind, key) -> slots   union of slots over all domains in a category ('c'),
-                                                     service ('s') or all non-background domains ('a')
+  hourly      (hour, client, domain) -> queries, blocked, slots, idle
+                                       slots = 12-bit mask of 5-minute slots with queries; idle = the device
+                                       queries this domain around the clock that day (background, not usage)
+  daily       (day, client, domain)  -> queries, blocked, active  active = number of active (non-idle) slots
+  group_hourly(hour, client, kind, key) -> slots   active slots of a category ('c'), service ('s') or of all
+                                                     non-background domains ('a'). Each slot of a device goes to
+                                                     one category and at most one service, so they add up.
   group_daily (day, client, kind, key)  -> active
   meta_daily  (day, client, kind, key)  -> value   qtype / reason / upstream counts, cache hits, latency sum
 `hour` is a UTC epoch (start of hour); `day` is the local date as YYYYMMDD.
@@ -35,6 +38,7 @@ CREATE TABLE IF NOT EXISTS rules(
   PRIMARY KEY(pattern, source));
 CREATE TABLE IF NOT EXISTS hourly(
   hour INTEGER, client_id INTEGER, domain_id INTEGER, queries INTEGER, blocked INTEGER, slots INTEGER,
+  idle INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY(hour, client_id, domain_id)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS daily(
   day INTEGER, client_id INTEGER, domain_id INTEGER, queries INTEGER, blocked INTEGER, active INTEGER,
@@ -87,6 +91,8 @@ def init(path=None):
     cols = {r[1] for r in conn.execute("PRAGMA table_info(domains)")}
     if "periodic" not in cols:  # added in 0.2
         conn.execute("ALTER TABLE domains ADD COLUMN periodic INTEGER NOT NULL DEFAULT 0")
+    if "idle" not in {r[1] for r in conn.execute("PRAGMA table_info(hourly)")}:  # added in 0.3
+        conn.execute("ALTER TABLE hourly ADD COLUMN idle INTEGER NOT NULL DEFAULT 0")
     conn.commit()
     return conn
 

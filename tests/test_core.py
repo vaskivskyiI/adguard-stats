@@ -234,3 +234,46 @@ def test_periodic_traffic_and_person_overlap(make_collector, monkeypatch):
     assert s["minutes"] == 60                      # IoT excluded; overlapping devices counted once
     rows = {r["name"]: r["minutes"] for r in client.get("/api/top", params={**monkey, "by": "client"}).json()["rows"]}
     assert rows["dev-10.0.0.1"] == 60 and rows["dev-10.0.0.2"] == 60
+
+
+def test_always_on_apps_are_not_usage(make_collector, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import api
+
+    day = datetime(2026, 3, 4, tzinfo=timezone.utc)
+    pc = "10.0.0.60"
+    es = [entry(day + timedelta(minutes=5 * i), pc, "slack.com") for i in range(288)]   # app left open
+    es += [entry(day + timedelta(hours=10, minutes=5 * i), pc, "www.google.com") for i in range(6)]
+    es += [entry(day + timedelta(hours=10, minutes=5 * i), pc, "instagram.com") for i in range(3)]
+    c = make_collector(es)
+    while c.poll():
+        pass
+    api.collector = c
+    client = TestClient(api.app)
+    monkeypatch.setattr(api, "hourly_since", lambda: datetime(2026, 1, 1).date())
+    rng = {"start": "2026-03-04", "end": "2026-03-04"}
+    assert client.get("/api/summary", params=rng).json()["current"]["minutes"] == 30
+    sites = {r["name"]: r["minutes"] for r in client.get("/api/top", params={**rng, "by": "site"}).json()["rows"]}
+    assert sites["slack.com"] == 0 and sites["www.google.com"] == 30
+    cats = client.get("/api/top", params={**rng, "by": "category"}).json()["rows"]
+    assert sum(r["minutes"] for r in cats) == 30          # each slot counted in one category only
+    for split in ("category", "service"):
+        ts = client.get("/api/timeseries", params={**rng, "split": split, "bucket": "day"}).json()
+        assert sum(sum(s["data"]) for s in ts["series"]) <= 30
+
+
+def test_late_written_entries(make_collector):
+    base = datetime(2026, 3, 1, tzinfo=timezone.utc)
+    entries = [entry(base + timedelta(seconds=2 * i), "10.0.0.1", f"site{i % 40}.com") for i in range(1200)]
+    c = make_collector(entries)
+    while c.poll():
+        pass
+    assert totals(c.conn)[0] == 1200
+    # AdGuard writes a slow query after newer ones: it is older than the newest entry already read
+    late = entry(base + timedelta(seconds=2 * 1199 - 5), "10.0.0.7", "slow.example")
+    c.api.entries = [entry(base + timedelta(seconds=2 * 1200), "10.0.0.1", "new.com"), late] + c.api.entries
+    while c.poll():
+        pass
+    assert totals(c.conn)[0] == 1202
+    assert c.poll() is False
+    assert totals(c.conn)[0] == 1202

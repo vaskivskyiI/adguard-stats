@@ -155,9 +155,16 @@ to the internet. Basic auth over plain HTTP is only suitable on a trusted LAN or
 A device's DNS queries to a site are recorded at 5-minute resolution. If a device queried any domain
 of, say, Instagram in a 5-minute slot, that slot counts as 5 minutes on Instagram. For categories,
 services and overall time, the slots of all their domains are combined first, so `instagram.com` and
-`cdninstagram.com` queried in the same slot count once.
+`cdninstagram.com` queried in the same slot count once. A slot in which a device queried several
+categories goes to one of them (foreground before background, then the one with more queries that
+hour), so the categories of a day add up to its total.
 
-Two corrections keep the numbers close to what people actually do:
+Three corrections keep the numbers close to what people actually do:
+- **Apps left open.** When a device queries a site in at least 18 different hours of a day (of the
+  last 24 hours for today), the device is polling it, not someone using it: a mail or chat client,
+  a cloud drive or an AI app left open on an always-on PC, a TV app, an IoT cloud. That site's
+  queries still count, but not its time on that device that day. Real use on such a device shows
+  up through the other sites it opens.
 - **Automatic traffic.** An uncategorized domain that a device queries in at least 18 different hours
   of a day (IoT vendor clouds, sync clients, weather widgets, your own server) is marked
   "Automatic traffic", a background category. People do not use one site around the clock;
@@ -169,7 +176,7 @@ Two corrections keep the numbers close to what people actually do:
 It is still an approximation:
 - DNS caching on the device hides repeated visits within a record's TTL, so short sessions can be
   undercounted.
-- Apps open in the background (messengers, social apps) query periodically, so they can be overcounted.
+- Apps open in the background for only part of a day query periodically, so they can be overcounted.
 - Background categories are left out of the overall "active time".
 
 Treat the numbers as a way to compare people, days and categories, not as exact screen time.
@@ -180,8 +187,8 @@ Raw query-log entries are never stored. Each poll folds them into aggregate tabl
 
 | Table | Key | Values | Kept |
 |---|---|---|---|
-| `hourly` | hour, device, site | queries, blocked, 12-bit mask of active 5-min slots | `HOURLY_RETENTION_DAYS` |
-| `group_hourly` | hour, device, category / service / all | slot mask (union over the domains in the group) | `HOURLY_RETENTION_DAYS` |
+| `hourly` | hour, device, site | queries, blocked, 12-bit mask of active 5-min slots, idle flag (apps left open) | `HOURLY_RETENTION_DAYS` |
+| `group_hourly` | hour, device, category / service / all | slot mask; each active slot belongs to one category and at most one service | `HOURLY_RETENTION_DAYS` |
 | `daily` | day, device, site | queries, blocked, active slots | forever |
 | `group_daily` | day, device, category / service / all | active slots | forever |
 | `meta_daily` | day, device, kind, key | query types, response reasons, upstreams, cache hits, latency | forever |

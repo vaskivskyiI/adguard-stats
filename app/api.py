@@ -204,25 +204,27 @@ def group_conds(f, kind):
     return conds, params
 
 
-def source(f, metric, splits, hourly, value=None):
-    """-> (sql_from_where, key_exprs, value_expr, params) for an aggregate over the filter."""
+def source(f, metric, splits, hourly):
+    """-> (sql_from_where, key_exprs, value_expr, params) for an aggregate over the filter.
+    metric "slots" (hourly only) is the expression for a row's active slot mask."""
     if metric == "blocked":  # blocked traffic is mostly ads/trackers, i.e. "background": never hide it
         f = replace(f, hide_bg=False)
-    src = minute_source(f, splits) if metric == "minutes" else "domain"
+    src = minute_source(f, splits) if metric in ("minutes", "slots") else "domain"
     if src == "domain":
         table = "hourly" if hourly else "daily"
         joins = "JOIN domains d ON d.id=x.domain_id JOIN clients c ON c.id=x.client_id"
         keys = [DOMAIN_SPLIT[s] for s in splits]
         conds, params = domain_conds(f)
-        val = {"queries": "SUM(x.queries)", "blocked": "SUM(x.blocked)",
-               "minutes": "SUM(popcount(x.slots))" if hourly else "SUM(x.active)"}[metric]
+        slots = "(CASE WHEN x.idle THEN 0 ELSE x.slots END)"
+        val = {"queries": "SUM(x.queries)", "blocked": "SUM(x.blocked)", "slots": slots,
+               "minutes": f"SUM(popcount({slots}))" if hourly else "SUM(x.active)"}[metric]
     else:
         table = "group_hourly" if hourly else "group_daily"
         joins = "JOIN clients c ON c.id=x.client_id"
         gsplit = dict(DOMAIN_SPLIT, category="x.key", service="x.key")
         keys = [gsplit[s] for s in splits]
         conds, params = group_conds(f, src)
-        val = "SUM(popcount(x.slots))" if hourly else "SUM(x.active)"
+        val = "x.slots" if metric == "slots" else "SUM(popcount(x.slots))" if hourly else "SUM(x.active)"
     if hourly:
         conds.insert(0, "x.hour>=? AND x.hour<?")
         params[:0] = [f.t0, f.t1]
@@ -232,7 +234,7 @@ def source(f, metric, splits, hourly, value=None):
     if f.clients is not None:
         c, p = in_clause("x.client_id", f.clients)
         conds.append(c), params.extend(p)
-    return f"FROM {table} x {joins} WHERE {' AND '.join(conds)}", keys, value or val, params
+    return f"FROM {table} x {joins} WHERE {' AND '.join(conds)}", keys, val, params
 
 
 def agg(conn, f, metric, splits=(), bucket=None):
@@ -253,20 +255,35 @@ def agg(conn, f, metric, splits=(), bucket=None):
 
 def agg_per_person(conn, f, splits, bucket):
     """Like agg() for minutes, but a person's devices active in the same 5-minute slot count once.
-    Unassigned devices count separately. Needs hour-level data (slot masks)."""
+    Unassigned devices count separately. Needs hour-level data (slot masks).
+    Split by category or service, a slot two devices of one person spent on different categories
+    goes to one of them (the one with more time that hour), so the parts add up to the whole."""
     frm, keys, _, params = source(f, "minutes", splits, True)
     unit = "CASE WHEN c.person_id IS NULL THEN -x.client_id ELSE c.person_id END"
-    sel = [f"{k} AS k{i}" for i, k in enumerate(keys)] + ["x.hour AS h", f"{unit} AS u", "popcount(bitor(x.slots))"]
+    sel = [f"{k} AS k{i}" for i, k in enumerate(keys)] + ["x.hour AS h", f"{unit} AS u", "bitor(x.slots)"]
     group = [f"k{i}" for i in range(len(keys))] + ["h", "u"]
+    excl = next((i for i, s in enumerate(splits) if s in ("category", "service")), None)
+    cells = defaultdict(dict)  # (other split keys, hour, unit) -> {category/service: slots}
+    for *k, h, u, slots in conn.execute(f"SELECT {', '.join(sel)} {frm} GROUP BY {', '.join(group)}", params):
+        g = k.pop(excl) if excl is not None else None
+        cells[(tuple(k), h, u)][g] = slots
     out, day_of = Counter(), {}
-    for *k, h, _, v in conn.execute(f"SELECT {', '.join(sel)} {frm} GROUP BY {', '.join(group)}", params):
+    for (k, h, _), groups in cells.items():
         if bucket == "hour":
             b = h
         elif bucket == "day":
             b = day_of.get(h) or day_of.setdefault(h, db.local_day_of(h))
         else:
             b = None
-        out[(*k, b)] += v
+        taken = 0
+        for g, slots in sorted(groups.items(), key=lambda kv: (-kv[1].bit_count(), str(kv[0]))):
+            n = (slots & ~taken).bit_count()
+            taken |= slots
+            if n:
+                key = list(k)
+                if excl is not None:
+                    key.insert(excl, g)
+                out[(*key, b)] += n
     return [(*k, v * SM) for k, v in out.items()]
 
 
@@ -423,7 +440,7 @@ def timeline(day: Optional[str] = None, split: str = "category", top: int = 12,
     check_split(split)
     d = parse_date(day, f.end)
     f.start = f.end = d
-    frm, keys, val, params = source(f, "minutes", [split] if split != "none" else [], True, value="x.slots")
+    frm, keys, val, params = source(f, "slots", [split] if split != "none" else [], True)
     key = keys[0] if keys else "''"
     acc = defaultdict(int)
     for k, hour, slots in conn.execute(f"SELECT {key}, x.hour, {val} {frm}", params):

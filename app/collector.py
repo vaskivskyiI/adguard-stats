@@ -34,6 +34,9 @@ PAGE_SIZE = 500
 PAGES_PER_CHUNK = 100          # pages ingested before dirty days are re-aggregated
 RECOVERY_TRIES = 20            # offset lookups per page when AdGuard cannot seek
 PERIODIC_HOURS = 18            # an unknown domain queried in this many hours of a day is machine traffic
+ALWAYS_ON_HOURS = 18           # a device querying a domain in this many hours of a day is not being used for it
+LAG = 120                      # seconds by which AdGuard may write an entry after newer ones
+AGG_VERSION = "3"              # bump when rebuild_day changes, to re-derive all hour-level history
 SERVICES_REFRESH = 24 * 3600
 CLIENTS_REFRESH = 600
 MAC = re.compile(r"^[0-9a-f]{2}([:-][0-9a-f]{2}){5}$")
@@ -45,6 +48,11 @@ BLOCK_REASONS = {
 
 def parse_time(s: str) -> float:
     return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+
+
+def fingerprint(e):
+    q = e.get("question") or {}
+    return f"{e.get('time')}|{client_key(e)}|{q.get('name') or q.get('host')}|{q.get('type')}"
 
 
 def known_clients(clients, dhcp):
@@ -214,7 +222,8 @@ class Ingester:
 
         c = self.conn
         c.executemany(
-            "INSERT INTO hourly VALUES(?,?,?,?,?,?) ON CONFLICT(hour, client_id, domain_id) DO UPDATE SET "
+            "INSERT INTO hourly(hour, client_id, domain_id, queries, blocked, slots) VALUES(?,?,?,?,?,?) "
+            "ON CONFLICT(hour, client_id, domain_id) DO UPDATE SET "
             "queries=queries+excluded.queries, blocked=blocked+excluded.blocked, slots=slots|excluded.slots",
             [(*k, *v) for k, v in hourly.items()],
         )
@@ -248,12 +257,28 @@ def mark_periodic(conn, start, end):
     return len(ids)
 
 
+def mark_idle(conn, start, end, now=None):
+    """Flag the hourly rows of [start, end) whose device queried that domain in at least
+    ALWAYS_ON_HOURS distinct hours of the day (of the last 24 hours while the day is still running).
+    Apps left open (mail, chat, cloud drives, AI assistants) and IoT clouds keep polling all day and
+    night; that is not someone using the device."""
+    nxt = (int(now or time.time()) // 3600 + 1) * 3600
+    w1 = min(end, nxt)
+    w0 = min(start, w1 - 86400)
+    conn.execute(
+        "UPDATE hourly SET idle=((client_id, domain_id) IN (SELECT client_id, domain_id FROM hourly "
+        "WHERE hour>=? AND hour<? GROUP BY client_id, domain_id HAVING COUNT(*)>=?)) WHERE hour>=? AND hour<?",
+        (w0, w1, ALWAYS_ON_HOURS, start, end))
+
+
 def rebuild_day(conn, day: int):
-    """Recompute daily, group_hourly and group_daily for one local day from hourly."""
+    """Recompute idle flags, daily, group_hourly and group_daily for one local day from hourly."""
     start, end = db.day_bounds(db.int_day(day))
+    mark_idle(conn, start, end)
     conn.execute("DELETE FROM daily WHERE day=?", (day,))
     conn.execute(
-        "INSERT INTO daily SELECT ?, client_id, domain_id, SUM(queries), SUM(blocked), SUM(popcount(slots)) "
+        "INSERT INTO daily SELECT ?, client_id, domain_id, SUM(queries), SUM(blocked), "
+        "SUM(CASE WHEN idle THEN 0 ELSE popcount(slots) END) "
         "FROM hourly WHERE hour>=? AND hour<? GROUP BY client_id, domain_id",
         (day, start, end),
     )
@@ -261,17 +286,37 @@ def rebuild_day(conn, day: int):
 
 
 def rebuild_groups(conn, day, start, end):
-    acc = defaultdict(int)
-    for hour, cid, slots, service, category in conn.execute(
-        "SELECT h.hour, h.client_id, h.slots, d.service, d.category FROM hourly h "
-        "JOIN domains d ON d.id=h.domain_id WHERE h.hour>=? AND h.hour<?",
+    """Each active slot of a device goes to one category: foreground before background, then the
+    category with more queries in that hour. Services likewise. So per-category time adds up to the
+    total instead of counting a slot once for every app that happened to query in it."""
+    bg = categories.BACKGROUND
+    cells = defaultdict(lambda: (defaultdict(lambda: [0, 0, False]), defaultdict(lambda: [0, 0, False])))
+    for hour, cid, queries, slots, service, category in conn.execute(
+        "SELECT h.hour, h.client_id, h.queries, h.slots, d.service, d.category FROM hourly h "
+        "JOIN domains d ON d.id=h.domain_id WHERE h.hour>=? AND h.hour<? AND h.idle=0",
         (start, end),
     ):
-        acc[(hour, cid, "c", category)] |= slots
-        if service:
-            acc[(hour, cid, "s", service)] |= slots
-        if category not in categories.BACKGROUND:
-            acc[(hour, cid, "a", "")] |= slots
+        cats, svcs = cells[(hour, cid)]
+        for groups, key in ((cats, category), (svcs, service)):
+            if key:
+                g = groups[key]
+                g[0] += queries
+                g[1] |= slots
+                g[2] = category in bg
+    acc = {}
+    for (hour, cid), (cats, svcs) in cells.items():
+        for kind, groups in (("c", cats), ("s", svcs)):
+            taken = 0
+            for key, (_, slots, is_bg) in sorted(groups.items(), key=lambda kv: (kv[1][2], -kv[1][0], kv[0])):
+                if slots & ~taken:
+                    acc[(hour, cid, kind, key)] = slots & ~taken
+                    taken |= slots
+        fg = 0
+        for _, slots, is_bg in cats.values():
+            if not is_bg:
+                fg |= slots
+        if fg:
+            acc[(hour, cid, "a", "")] = fg
     totals = Counter()
     for (hour, cid, kind, key), slots in acc.items():
         totals[(cid, kind, key)] += slots.bit_count()
@@ -304,6 +349,12 @@ class Collector:
                 floor = self.conn.execute("SELECT MIN(first_seen) FROM clients").fetchone()[0]
                 if floor is not None:
                     db.set_state(self.conn, "floor", floor)
+            if db.get_state(self.conn, "agg_version") != AGG_VERSION:
+                # how time is derived changed: rebuild every day that still has hour-level data
+                days = {db.local_day_of(h) for (h,) in self.conn.execute(
+                    "SELECT DISTINCT hour FROM hourly")}
+                db.set_state(self.conn, "dirty_days", ",".join(map(str, self._dirty() | days)))
+                db.set_state(self.conn, "agg_version", AGG_VERSION)
             self.conn.commit()
 
     # --- categorization ----------------------------------------------------
@@ -385,16 +436,25 @@ class Collector:
             "top": float(db.get_state(c, "run_top")), "stop": float(db.get_state(c, "run_stop")),
             "older": db.get_state(c, "run_older", ""), "pos": float(db.get_state(c, "run_pos", "inf")),
             "seen": int(db.get_state(c, "run_seen", "0")),
+            "edge": json.loads(db.get_state(c, "run_edge", "{}")),
+            "recent": json.loads(db.get_state(c, "recent", "{}")),
             "history": db.get_state(c, "history_done") is None,
             "floor": float(floor) if floor is not None else None,
         }
 
     def _fetch(self, st):
-        """Next page of the run -> (entries older than the run position, next older_than).
-        Returns (None, None) at the end of the log."""
+        """Next page of the run -> (entries not yet seen in this run, next older_than).
+        Returns (None, None) at the end of the log.
+
+        The log is only roughly time-ordered, so "seen" is decided by fingerprint for entries
+        within LAG of the run position (`edge`) or of the previous run's newest entry (`recent`)."""
         def fresh_of(data):
-            entries = [(parse_time(e["time"]), e) for e in data]
-            return [(ts, e) for ts, e in entries if ts < st["pos"] and ts <= st["top"]]
+            out = []
+            for e in data:
+                ts = parse_time(e["time"])
+                if ts <= st["top"] and ts < st["pos"] + LAG and fingerprint(e) not in st["edge"]                         and fingerprint(e) not in st["recent"]:
+                    out.append((ts, e))
+            return out
 
         page = self.api.querylog(st["older"])
         data = page.get("data") or []
@@ -427,13 +487,15 @@ class Collector:
                 data = page.get("data") or []
                 if not data:
                     return False
-                top = parse_time(data[0]["time"])
+                top = max(parse_time(e["time"]) for e in data)
                 cursor = float(db.get_state(c, "cursor", "0"))
-                if top <= cursor and db.get_state(c, "history_done") is not None:
+                recent = json.loads(db.get_state(c, "recent", "{}"))
+                if db.get_state(c, "history_done") is not None and all(
+                        parse_time(e["time"]) <= cursor - LAG or fingerprint(e) in recent for e in data):
                     return False
                 db.set_state(c, "run_top", max(top, cursor))
-                db.set_state(c, "run_stop", cursor)
-                for k in ("run_older", "run_pos", "run_seen"):
+                db.set_state(c, "run_stop", cursor - LAG)  # late-written entries can be older than the cursor
+                for k in ("run_older", "run_pos", "run_seen", "run_edge", "run_recent"):
                     db.set_state(c, k, None)
                 c.commit()
         more = True
@@ -447,21 +509,29 @@ class Collector:
                 if ts > st["stop"] or (st["history"] and (st["floor"] is None or ts < st["floor"])):
                     batch.append((ts, e))
                 elif not st["history"]:
-                    finished = True  # reached what earlier runs ingested
-                    break
+                    finished = True  # reached what earlier runs ingested; finish this page first
             with self.lock:
                 days = self.ingester.ingest(batch)
                 db.set_state(c, "dirty_days", ",".join(map(str, self._dirty() | days)))
+                recent = json.loads(db.get_state(c, "run_recent", "{}"))
+                recent.update((fingerprint(e), ts) for ts, e in batch if ts > st["top"] - LAG)
                 if finished:
+                    recent.update(st["recent"])
+                    db.set_state(c, "recent", json.dumps(
+                        {k: v for k, v in recent.items() if v > st["top"] - LAG}))
                     db.set_state(c, "cursor", st["top"])
                     if fresh is None:
                         db.set_state(c, "history_done", 1)
                         db.set_state(c, "floor", None)
-                    for k in ("run_top", "run_stop", "run_older", "run_pos", "run_seen"):
+                    for k in ("run_top", "run_stop", "run_older", "run_pos", "run_seen", "run_edge", "run_recent"):
                         db.set_state(c, k, None)
                 else:
+                    db.set_state(c, "run_recent", json.dumps(recent))
                     if fresh:
-                        db.set_state(c, "run_pos", min(t for t, _ in fresh))
+                        pos = min(st["pos"], min(t for t, _ in fresh))
+                        edge = {**st["edge"], **{fingerprint(e): ts for ts, e in fresh}}
+                        db.set_state(c, "run_pos", pos)
+                        db.set_state(c, "run_edge", json.dumps({k: v for k, v in edge.items() if v < pos + LAG}))
                     db.set_state(c, "run_older", older)
                     db.set_state(c, "run_seen", st["seen"] + len(fresh))
                 c.commit()
