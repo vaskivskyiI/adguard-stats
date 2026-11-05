@@ -25,7 +25,7 @@ class FakeAPI:
         return {"data": page, "oldest": page[-1]["time"] if page else ""}
 
     def get(self, path):
-        return fake_adguard.SERVICES
+        return fake_adguard.ROUTES[path]
 
 
 def entry(t, ip, host, reason="NotFilteredNotFound"):
@@ -42,6 +42,7 @@ def make_collector(tmp_path, monkeypatch):
         c = col.Collector()
         c.api = FakeAPI(entries)
         c._refresh_services()
+        c._refresh_clients()
         return c
     return make
 
@@ -129,7 +130,7 @@ def test_api_endpoints(make_collector):
     api.collector = c
     client = TestClient(api.app)
     meta = client.get("/api/meta").json()
-    assert len(meta["clients"]) == len(fake_adguard.PERSONAS)
+    assert len(meta["clients"]) == len(fake_adguard.PERSONAS) + 5  # + clients known only to AdGuard
     anna = client.post("/api/persons", json={"name": "Anna", "color": "#e15759"}).json()["id"]
     for cl in meta["clients"]:
         if cl["ip"].startswith("192.168.1.1"):
@@ -156,3 +157,19 @@ def test_api_endpoints(make_collector):
     assert client.post("/api/rules", json={"pattern": "*.Netflix.com", "category": "Video & streaming", "service": "Netflix"}).json()["pattern"] == "netflix.com"
     assert client.post("/api/rules", json={"pattern": "bad pattern", "category": "x"}).status_code == 400
     assert client.post("/api/persons", json={"name": "Anna"}).status_code == 409
+
+
+def test_known_clients_and_client_ids(make_collector):
+    t = datetime(2024, 5, 6, 12, 0, tzinfo=timezone.utc)
+    doh = entry(t, "203.0.113.9", "example.net") | {"client_id": "anna-doh"}
+    c = make_collector([doh, entry(t, "192.168.1.10", "example.net")])
+    while c.poll():
+        pass
+    rows = dict(c.conn.execute("SELECT ip, name FROM clients"))
+    assert rows["192.168.1.40"] == "Living-room printer"        # persistent client, never queried
+    assert rows["192.168.1.42"] == "Guest tablet"               # persistent by MAC, resolved via DHCP lease
+    assert rows["192.168.1.43"] == "doorbell"                   # static DHCP lease
+    assert rows["192.168.1.41"] == "nas.lan"                    # runtime client
+    assert "10.0.0.0/24" not in rows and "203.0.113.9" not in rows
+    seen = c.conn.execute("SELECT ip FROM clients WHERE last_seen IS NOT NULL ORDER BY ip").fetchall()
+    assert seen == [("192.168.1.10",), ("anna-doh",)]           # DoH queries counted under the ClientID

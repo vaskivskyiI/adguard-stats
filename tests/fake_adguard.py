@@ -73,6 +73,21 @@ SERVICES = {"blocked_services": [
     {"id": "discord", "name": "Discord", "group_id": "messenger", "rules": ["||discord.com^", "||discord.gg^"]},
 ]}
 
+# Devices AdGuard knows about but that never appear in the query log above.
+CLIENTS = {
+    "clients": [
+        {"name": "Living-room printer", "ids": ["192.168.1.40"]},
+        {"name": "Guest tablet", "ids": ["AA:BB:CC:DD:EE:01"]},
+        {"name": "Whole subnet", "ids": ["10.0.0.0/24"]},
+        {"name": "Anna DoH phone", "ids": ["anna-doh"]},
+    ],
+    "auto_clients": [{"ip": "192.168.1.41", "name": "nas.lan", "source": "rDNS"},
+                     {"ip": "192.168.1.10", "name": "anna-phone", "source": "DHCP"}],
+}
+DHCP = {"enabled": True, "leases": [{"mac": "aa:bb:cc:dd:ee:01", "ip": "192.168.1.42", "hostname": "tablet"}],
+        "static_leases": [{"mac": "aa:bb:cc:dd:ee:02", "ip": "192.168.1.43", "hostname": "doorbell"}]}
+ROUTES = {"/control/blocked_services/all": SERVICES, "/control/clients": CLIENTS, "/control/dhcp/status": DHCP}
+
 
 def serve(entries, port):
     times = [e["time"] for e in entries][::-1]  # ascending, for bisect
@@ -91,8 +106,8 @@ def serve(entries, port):
                 i = 0 if not older else len(times) - bisect_left(times, older)
                 page = entries[i:i + limit]
                 body = {"data": page, "oldest": page[-1]["time"] if page else ""}
-            elif u.path == "/control/blocked_services/all":
-                body = SERVICES
+            elif u.path in ROUTES:
+                body = ROUTES[u.path]
             else:
                 self.send_response(404)
                 self.end_headers()

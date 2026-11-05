@@ -5,8 +5,10 @@ cursor (newest entry already ingested). Each page is ingested in one transaction
 the run position, so a crash or restart never counts an entry twice.
 """
 import base64
+import ipaddress
 import json
 import logging
+import re
 import ssl
 import threading
 import time
@@ -23,6 +25,8 @@ log = logging.getLogger("collector")
 PAGE_SIZE = 500
 PAGES_PER_CHUNK = 100          # pages ingested before dirty days are re-aggregated
 SERVICES_REFRESH = 24 * 3600
+CLIENTS_REFRESH = 600
+MAC = re.compile(r"^[0-9a-f]{2}([:-][0-9a-f]{2}){5}$")
 BLOCK_REASONS = {
     "FilteredBlackList", "FilteredSafeBrowsing", "FilteredParental",
     "FilteredInvalid", "FilteredBlockedService",
@@ -31,6 +35,46 @@ BLOCK_REASONS = {
 
 def parse_time(s: str) -> float:
     return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+
+
+def known_clients(clients, dhcp):
+    """Map client key (IP or ClientID) -> name from AdGuard's client list and DHCP leases.
+
+    Persistent clients win over runtime ("auto") clients, which win over DHCP host names.
+    Persistent clients identified by MAC are resolved to an IP through the DHCP leases.
+    CIDR ranges cannot be listed and are skipped.
+    """
+    leases = (dhcp or {}).get("leases") or []
+    leases = leases + ((dhcp or {}).get("static_leases") or [])
+    mac_ip = {(l.get("mac") or "").lower(): l["ip"] for l in leases if l.get("ip")}
+    out = {l["ip"]: l.get("hostname") or "" for l in leases if l.get("ip")}
+    for a in (clients or {}).get("auto_clients") or []:
+        if a.get("ip"):
+            out[a["ip"]] = a.get("name") or out.get(a["ip"], "")
+    for pc in (clients or {}).get("clients") or []:
+        for cid in pc.get("ids") or []:
+            cid = cid.strip().lower()
+            if "/" in cid:
+                continue
+            if MAC.match(cid):
+                cid = mac_ip.get(cid.replace("-", ":"))
+                if not cid:
+                    continue
+            out[cid] = pc.get("name") or ""
+    return out
+
+
+def client_key(e):
+    """A device is its ClientID (DoH/DoT/DoQ) when it sends one, else its IP."""
+    return e.get("client_id") or e.get("client") or "unknown"
+
+
+def norm_key(k):
+    """Canonical IP (as AdGuard writes it in the query log) or ClientID; None if neither."""
+    try:
+        return str(ipaddress.ip_address(k))
+    except ValueError:
+        return k if re.fullmatch(r"[a-z0-9-]{1,64}", k) else None
 
 
 class AdGuard:
@@ -73,6 +117,13 @@ class Ingester:
             self.clients[ip] = cid
         return cid
 
+    def add_known(self, known):
+        """Create rows for devices AdGuard knows about, so they can be assigned before they query."""
+        known = {nk: n for k, n in known.items() if (nk := norm_key(k))}
+        for key, name in known.items():
+            self._client(key, name)
+        self.conn.executemany("UPDATE clients SET name=? WHERE ip=?", [(n, k) for k, n in known.items() if n])
+
     def _domain(self, site, adblocked):
         hit = self.domains.get(site)
         if hit is None:
@@ -103,7 +154,7 @@ class Ingester:
             name = categories.normalize(q.get("name") or q.get("host") or "")
             if not name:
                 continue
-            ip = e.get("client") or "unknown"
+            ip = client_key(e)
             info = e.get("client_info") or {}
             if info.get("name"):
                 names[ip] = info["name"]
@@ -206,6 +257,7 @@ class Collector:
             "ingested_total": 0, "backfilling": False, "regroup_pending": 0,
         }
         self._next_services = 0
+        self._next_clients = 0
         self._next_prune = 0
         with self.lock:
             categories.replace_rules(self.conn, "builtin", categories.builtin_rules())
@@ -250,6 +302,21 @@ class Collector:
                 self._apply_rule_change()
                 self.conn.commit()
             log.info("loaded %d AdGuard service rules", len(rules))
+
+    def _refresh_clients(self):
+        try:
+            clients = self.api.get("/control/clients")
+        except Exception as ex:
+            log.warning("client list unavailable: %s", ex)
+            return
+        try:
+            dhcp = self.api.get("/control/dhcp/status")
+        except Exception:  # DHCP is optional
+            dhcp = None
+        known = known_clients(clients, dhcp)
+        with self.lock:
+            self.ingester.add_known(known)
+            self.conn.commit()
 
     # --- polling -----------------------------------------------------------
 
@@ -344,6 +411,9 @@ class Collector:
                 if now >= self._next_services:
                     self._next_services = now + SERVICES_REFRESH
                     self._refresh_services()
+                if now >= self._next_clients:
+                    self._next_clients = now + CLIENTS_REFRESH
+                    self._refresh_clients()
                 self.status["last_poll"] = now
                 more = self.poll()
                 self.status["last_success"] = time.time()

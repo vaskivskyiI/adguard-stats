@@ -127,6 +127,11 @@ AdGuard Home requirements:
 - The query log must be enabled. The collector can only import what the query log still holds, so
   on first start it backfills whatever retention you have configured (for example the last 7 days).
 - Client IP anonymization must be off, or every query is attributed to one client.
+- The device list holds every client seen in the query log, plus the clients AdGuard Home knows
+  (persistent clients, runtime clients, DHCP leases), so you can assign devices before they query.
+  Devices that use encrypted DNS with a ClientID are tracked by that ClientID instead of their IP.
+- If your router forwards DNS to AdGuard Home, every device shows up as the router. Point the
+  devices at AdGuard Home directly (for example as the DNS server in the router's DHCP settings).
 - The account in `.env` only needs to read the API. You can create a dedicated user in `AdGuardHome.yaml`.
 
 ## Configuration (`.env`)

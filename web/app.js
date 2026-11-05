@@ -619,10 +619,11 @@ renderers.settings = async seq => {
   const personOpts = c => `<option value="">— unassigned —</option>` + META.persons.map(p => `<option value="${p.id}" ${p.id === c.person_id ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
   const clients = META.clients.slice().sort((a, b) => (b.last_seen || 0) - (a.last_seen || 0));
   const ct = table($('#clients-table'), [
-    { t: 'IP', k: 'ip' }, { t: 'AdGuard name', k: 'name' },
+    { t: 'IP / ClientID', k: 'ip' }, { t: 'AdGuard name', k: 'name' },
     { t: 'Label', f: c => `<input data-f="label" value="${esc(c.label || '')}" placeholder="e.g. Anna's phone" maxlength="64" aria-label="Label">` },
     { t: 'Person', f: c => `<select data-f="person" aria-label="Person">${personOpts(c)}</select>` },
-    { t: 'First seen', f: c => fmtDate(c.first_seen) }, { t: 'Last seen', f: c => fmtDate(c.last_seen) },
+    { t: 'First seen', f: c => c.first_seen ? fmtDate(c.first_seen) : '<span class="hint">no queries yet</span>' },
+    { t: 'Last seen', f: c => fmtDate(c.last_seen) },
   ], clients);
   $$('tbody tr', ct).forEach((tr, i) => {
     const c = clients[i];
