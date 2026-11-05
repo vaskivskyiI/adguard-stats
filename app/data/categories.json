@@ -1,0 +1,146 @@
+{
+  "_comment": "Built-in categorization. Category -> service -> domain suffixes. Service '_' means 'no specific service'. User rules (Settings > Rules) and AdGuard Home blocked-services data are merged with this file; user rules win, then this file, then AdGuard.",
+  "Social networks": {
+    "Facebook": ["facebook.com", "facebook.net", "fbcdn.net", "fb.com", "fb.me", "fbsbx.com", "messenger.com"],
+    "Instagram": ["instagram.com", "cdninstagram.com", "ig.me"],
+    "TikTok": ["tiktok.com", "tiktokv.com", "tiktokcdn.com", "tiktokcdn-us.com", "byteoversea.com", "ibytedtos.com", "musical.ly", "ttwstatic.com"],
+    "Snapchat": ["snapchat.com", "snap.com", "sc-cdn.net", "snapkit.com", "sc-static.net", "snapads.com"],
+    "X (Twitter)": ["twitter.com", "x.com", "twimg.com", "t.co"],
+    "Reddit": ["reddit.com", "redd.it", "redditmedia.com", "redditstatic.com"],
+    "Pinterest": ["pinterest.com", "pinimg.com"],
+    "LinkedIn": ["linkedin.com", "licdn.com"],
+    "Tumblr": ["tumblr.com"],
+    "Threads": ["threads.net", "threads.com"],
+    "Bluesky": ["bsky.app", "bsky.social"],
+    "Mastodon": ["mastodon.social", "joinmastodon.org"],
+    "VK": ["vk.com", "vk.me", "userapi.com"],
+    "BeReal": ["bereal.com", "bere.al"]
+  },
+  "Messaging": {
+    "WhatsApp": ["whatsapp.com", "whatsapp.net", "wa.me"],
+    "Telegram": ["telegram.org", "telegram.me", "t.me", "telesco.pe"],
+    "Signal": ["signal.org", "whispersystems.org", "signal.art"],
+    "Discord": ["discord.com", "discord.gg", "discordapp.com", "discordapp.net", "discord.media"],
+    "Viber": ["viber.com"],
+    "Skype": ["skype.com", "skypeassets.com"],
+    "Microsoft Teams": ["teams.microsoft.com", "teams.live.com"],
+    "Slack": ["slack.com", "slack-edge.com", "slack-msgs.com"],
+    "Zoom": ["zoom.us", "zoom.com"]
+  },
+  "Video & streaming": {
+    "YouTube": ["youtube.com", "youtu.be", "ytimg.com", "googlevideo.com", "youtube-nocookie.com", "youtubei.googleapis.com", "yt3.ggpht.com", "youtubekids.com"],
+    "Netflix": ["netflix.com", "netflix.net", "nflxvideo.net", "nflximg.net", "nflximg.com", "nflxext.com", "nflxso.net"],
+    "Twitch": ["twitch.tv", "ttvnw.net", "jtvnw.net", "twitchcdn.net"],
+    "Disney+": ["disneyplus.com", "disney-plus.net", "bamgrid.com", "dssott.com"],
+    "Prime Video": ["primevideo.com", "aiv-cdn.net", "aiv-delivery.net", "amazonvideo.com"],
+    "HBO Max": ["max.com", "hbomax.com", "hbo.com"],
+    "Apple TV+": ["tv.apple.com"],
+    "Vimeo": ["vimeo.com", "vimeocdn.com"],
+    "Dailymotion": ["dailymotion.com", "dmcdn.net"],
+    "Kick": ["kick.com"],
+    "Plex": ["plex.tv", "plex.direct"],
+    "Crunchyroll": ["crunchyroll.com"]
+  },
+  "Music & audio": {
+    "Spotify": ["spotify.com", "scdn.co", "spotifycdn.com", "spotify.design", "spclient.wg.spotify.com"],
+    "Apple Music": ["music.apple.com"],
+    "Deezer": ["deezer.com", "dzcdn.net"],
+    "SoundCloud": ["soundcloud.com", "sndcdn.com"],
+    "Tidal": ["tidal.com"],
+    "YouTube Music": ["music.youtube.com"],
+    "Audible": ["audible.com"],
+    "_": ["podcasts.apple.com", "pocketcasts.com"]
+  },
+  "Gaming": {
+    "Steam": ["steampowered.com", "steamcommunity.com", "steamstatic.com", "steamcontent.com", "steamserver.net"],
+    "Epic Games": ["epicgames.com", "epicgames.dev", "unrealengine.com", "fortnite.com"],
+    "Roblox": ["roblox.com", "rbxcdn.com", "rbx.com"],
+    "Minecraft": ["minecraft.net", "mojang.com", "minecraftservices.com"],
+    "PlayStation": ["playstation.com", "playstation.net", "sonyentertainmentnetwork.com"],
+    "Xbox": ["xbox.com", "xboxlive.com", "xboxservices.com"],
+    "Nintendo": ["nintendo.com", "nintendo.net"],
+    "Riot Games": ["riotgames.com", "leagueoflegends.com", "riotcdn.net"],
+    "Blizzard": ["blizzard.com", "battle.net", "blzstatic.cn"],
+    "EA": ["ea.com", "origin.com"],
+    "Supercell": ["supercell.com", "supercell.net", "clashofclans.com", "brawlstars.com"],
+    "_": ["unity3d.com", "chess.com", "lichess.org", "poki.com", "miniclip.com", "kongregate.com"]
+  },
+  "Shopping": {
+    "Amazon": ["amazon.com", "amazon.de", "amazon.co.uk", "amazon.it", "amazon.fr", "amazon.es", "media-amazon.com", "ssl-images-amazon.com"],
+    "AliExpress": ["aliexpress.com", "aliexpress.us", "alicdn.com"],
+    "Temu": ["temu.com", "kwcdn.com"],
+    "Shein": ["shein.com", "ltwebstatic.com"],
+    "eBay": ["ebay.com", "ebay.de", "ebaystatic.com", "ebayimg.com"],
+    "Etsy": ["etsy.com", "etsystatic.com"],
+    "Zalando": ["zalando.com", "zalando.de", "ztat.net"],
+    "_": ["ikea.com", "wish.com", "bol.com", "allegro.pl", "vinted.com", "bolha.com", "mimovrste.com", "ceneje.si"]
+  },
+  "News & media": {
+    "_": ["bbc.co.uk", "bbc.com", "bbci.co.uk", "cnn.com", "nytimes.com", "theguardian.com", "reuters.com", "bloomberg.com", "washingtonpost.com", "foxnews.com", "aljazeera.com", "euronews.com", "dw.com", "spiegel.de", "lemonde.fr", "rtvslo.si", "24ur.com", "delo.si", "siol.net", "zurnal24.si", "n1info.si", "dnevnik.si", "news.google.com", "medium.com", "substack.com", "theverge.com", "arstechnica.com", "wired.com", "techcrunch.com", "news.ycombinator.com", "9gag.com", "imgur.com", "buzzfeed.com"]
+  },
+  "Search & portals": {
+    "Google Search": ["www.google.com", "www.google.si", "www.google.de", "www.google.co.uk", "www.google.at", "www.google.hr"],
+    "Bing": ["bing.com", "bing.net"],
+    "DuckDuckGo": ["duckduckgo.com"],
+    "_": ["yahoo.com", "yandex.ru", "yandex.net", "ecosia.org", "brave.com", "startpage.com", "msn.com", "najdi.si"]
+  },
+  "Email & productivity": {
+    "Gmail": ["mail.google.com", "gmail.com"],
+    "Google Workspace": ["docs.google.com", "drive.google.com", "calendar.google.com", "meet.google.com", "keep.google.com", "googleusercontent.com"],
+    "Microsoft 365": ["office.com", "office.net", "office365.com", "outlook.com", "outlook.live.com", "sharepoint.com", "onedrive.com", "onedrive.live.com", "live.com"],
+    "Notion": ["notion.so", "notion.site", "notion.com"],
+    "Dropbox": ["dropbox.com", "dropboxapi.com", "dropboxstatic.com"],
+    "GitHub": ["github.com", "githubusercontent.com", "githubassets.com", "github.io"],
+    "_": ["proton.me", "protonmail.com", "zoho.com", "trello.com", "atlassian.com", "atlassian.net", "figma.com", "canva.com", "evernote.com", "todoist.com", "gitlab.com", "stackoverflow.com", "stackexchange.com", "overleaf.com", "icloud.com"]
+  },
+  "Education & reference": {
+    "Wikipedia": ["wikipedia.org", "wikimedia.org", "wiktionary.org", "wikidata.org"],
+    "_": ["duolingo.com", "khanacademy.org", "coursera.org", "udemy.com", "edx.org", "quizlet.com", "brainly.com", "classroom.google.com", "moodle.org", "arnes.si", "edus.si", "eassistent.si", "easistent.com", "scholar.google.com", "researchgate.net", "arxiv.org", "translate.google.com", "deepl.com", "britannica.com", "wolframalpha.com", "geogebra.org", "kahoot.it", "kahoot.com"]
+  },
+  "AI tools": {
+    "ChatGPT": ["openai.com", "chatgpt.com", "oaistatic.com", "oaiusercontent.com"],
+    "Claude": ["claude.ai", "anthropic.com"],
+    "Gemini": ["gemini.google.com", "bard.google.com"],
+    "Copilot": ["copilot.microsoft.com", "githubcopilot.com"],
+    "_": ["perplexity.ai", "character.ai", "midjourney.com", "huggingface.co", "mistral.ai", "deepseek.com", "poe.com"]
+  },
+  "Finance": {
+    "PayPal": ["paypal.com", "paypalobjects.com"],
+    "Revolut": ["revolut.com"],
+    "_": ["wise.com", "stripe.com", "klarna.com", "nlb.si", "nkbm.si", "skb.si", "unicreditbank.si", "intesasanpaolobank.si", "binance.com", "coinbase.com", "kraken.com", "tradingview.com", "n26.com"]
+  },
+  "Travel & maps": {
+    "Google Maps": ["maps.google.com", "maps.googleapis.com"],
+    "_": ["booking.com", "bstatic.com", "airbnb.com", "muscache.com", "tripadvisor.com", "uber.com", "bolt.eu", "ryanair.com", "skyscanner.net", "flixbus.com", "openstreetmap.org", "waze.com", "here.com"]
+  },
+  "Dating": {
+    "_": ["tinder.com", "gotinder.com", "bumble.com", "badoo.com", "hinge.co", "okcupid.com", "grindr.com", "match.com"]
+  },
+  "Gambling": {
+    "_": ["bet365.com", "pokerstars.com", "williamhill.com", "unibet.com", "888.com", "betfair.com", "sportna-loterija.si", "loterija.si"]
+  },
+  "Software & updates": {
+    "Apple": ["apple.com", "mzstatic.com", "itunes.apple.com", "apps.apple.com", "cdn-apple.com", "apple-cloudkit.com", "icloud-content.com", "aaplimg.com", "push.apple.com"],
+    "Microsoft": ["microsoft.com", "windowsupdate.com", "windows.com", "windows.net", "msedge.net", "msn.net", "microsoftonline.com", "visualstudio.com", "azureedge.net"],
+    "Google services": ["google.com", "gstatic.com", "google.si", "google.de", "google.co.uk"],
+    "Google Play & Android": ["play.google.com", "android.com", "googleapis.com", "gvt1.com", "gvt2.com", "gvt3.com", "googleplay.com", "connectivitycheck.gstatic.com", "android.clients.google.com", "app-measurement.com.edgekey.net", "1e100.net", "ggpht.com"],
+    "Samsung": ["samsung.com", "samsungcloud.com", "samsungapps.com", "samsungosp.com", "samsungqbe.com"],
+    "Xiaomi": ["xiaomi.com", "mi.com", "miui.com", "xiaomi.net"],
+    "Mozilla": ["mozilla.org", "mozilla.com", "mozilla.net", "firefox.com"],
+    "_": ["ubuntu.com", "debian.org", "fedoraproject.org", "archlinux.org", "snapcraft.io", "flathub.org", "docker.com", "docker.io", "pypi.org", "pythonhosted.org", "npmjs.org", "npmjs.com", "adobe.com", "adobe.io", "jetbrains.com", "vscode-cdn.net", "opera.com", "huawei.com", "hicloud.com", "oneplus.com", "oppo.com", "lge.com", "lgtvsdp.com", "sonyentertainmentnetwork.net", "roku.com", "avast.com", "avg.com", "kaspersky.com", "eset.com", "bitdefender.com", "malwarebytes.com", "adguard.com", "adguard-dns.io", "ntp.org", "time.windows.com"]
+  },
+  "Smart home & IoT": {
+    "Amazon Alexa": ["alexa.amazon.com", "amazonalexa.com", "a2z.com"],
+    "Google Home": ["nest.com", "home.google.com", "googlehomefoyer-pa.googleapis.com"],
+    "_": ["tuya.com", "tuyaeu.com", "tuyaus.com", "home-assistant.io", "nabu.casa", "ring.com", "ewelink.cc", "coolkit.cc", "shelly.cloud", "meethue.com", "tplinkcloud.com", "tp-link.com", "ezvizlife.com", "hik-connect.com", "smartthings.com", "ifttt.com", "sonos.com", "myqcloud.com", "xiaomiyoupin.com", "io.mi.com", "aqara.com", "netatmo.net", "ecovacs.com", "roborock.com", "tado.com", "wyze.com", "arlo.com"]
+  },
+  "Ads & tracking": {
+    "_": ["doubleclick.net", "googlesyndication.com", "googleadservices.com", "google-analytics.com", "googletagmanager.com", "googletagservices.com", "app-measurement.com", "adservice.google.com", "crashlytics.com", "scorecardresearch.com", "adnxs.com", "criteo.com", "criteo.net", "taboola.com", "outbrain.com", "amazon-adsystem.com", "adsrvr.org", "rubiconproject.com", "pubmatic.com", "openx.net", "moatads.com", "hotjar.com", "mixpanel.com", "segment.io", "segment.com", "branch.io", "appsflyer.com", "adjust.com", "onesignal.com", "unityads.unity3d.com", "applovin.com", "applvn.com", "inmobi.com", "mopub.com", "chartboost.com", "vungle.com", "ironsrc.com", "ironsrc.mobi", "yandex.metrika.com", "mc.yandex.ru", "bugsnag.com", "sentry.io", "newrelic.com", "nr-data.net", "datadoghq.com", "quantserve.com", "bluekai.com", "demdex.net", "omtrdc.net", "2o7.net", "everesttech.net", "adform.net", "smartadserver.com", "teads.tv", "flurry.com", "kochava.com", "clarity.ms", "graph.facebook.com", "an.facebook.com", "ads.tiktok.com", "analytics.tiktok.com", "ads-api.twitter.com", "ads.linkedin.com", "px.ads.linkedin.com", "bat.bing.com", "samsungads.com", "ads.yahoo.com"]
+  },
+  "Infrastructure": {
+    "_": ["akamai.net", "akamaiedge.net", "akamaihd.net", "akamaized.net", "akadns.net", "edgekey.net", "edgesuite.net", "cloudflare.com", "cloudflare.net", "cloudflare-dns.com", "cloudflareinsights.com", "cloudfront.net", "amazonaws.com", "awsstatic.com", "fastly.net", "fastlylb.net", "fastly-edge.com", "azurefd.net", "trafficmanager.net", "cdn77.org", "jsdelivr.net", "unpkg.com", "cdnjs.com", "bootstrapcdn.com", "googleusercontent.com.edgekey.net", "gvt1-cn.com", "llnwd.net", "edgecastcdn.net", "stackpathdns.com", "b-cdn.net", "bunny.net", "digicert.com", "letsencrypt.org", "lencr.org", "sectigo.com", "globalsign.com", "pki.goog", "verisign.com", "ocsp.apple.com", "dns.google", "quad9.net", "nextdns.io", "root-servers.net", "gstatic.cn", "fonts.googleapis.com", "fonts.gstatic.com", "recaptcha.net", "hcaptcha.com", "gravatar.com", "wp.com", "typekit.net", "cookielaw.org", "onetrust.com", "usercentrics.eu", "cookiebot.com", "msftconnecttest.com", "captive.apple.com", "detectportal.firefox.com"]
+  },
+  "Privacy & VPN": {
+    "_": ["nordvpn.com", "expressvpn.com", "protonvpn.com", "mullvad.net", "surfshark.com", "torproject.org", "windscribe.com", "privateinternetaccess.com", "tailscale.com", "tailscale.io", "zerotier.com", "wireguard.com", "cyberghostvpn.com"]
+  }
+}

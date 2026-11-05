@@ -1,5 +1,5 @@
 .env
-data/
+/data/
 backup-*.db
 web/vendor/
 __pycache__/

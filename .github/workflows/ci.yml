@@ -8,8 +8,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt pytest httpx
@@ -17,5 +17,13 @@ jobs:
   container:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: podman build -t adguard-stats -f Containerfile .
+      - name: Smoke test the image
+        run: |
+          podman run -d --name smoke -p 8080:8080 -e ADGUARD_URL=http://127.0.0.1:9 -e DASHBOARD_PASSWORD=x adguard-stats
+          for i in $(seq 1 30); do curl -fs http://127.0.0.1:8080/healthz && break; sleep 1; done
+          curl -fs -u admin:x http://127.0.0.1:8080/api/meta | grep -q '"categories"'
+          curl -fs -u admin:x -o /dev/null http://127.0.0.1:8080/vendor/echarts.min.js
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/meta)" = 401
+          podman logs smoke
