@@ -1,0 +1,6 @@
+.env
+data/
+backup-*.db
+web/vendor/
+__pycache__/
+.pytest_cache/

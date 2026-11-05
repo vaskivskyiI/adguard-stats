@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AdGuard Stats</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="vendor/echarts.min.js"></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand">AdGuard <b>Stats</b></div>
+  <nav id="tabs">
+    <button data-tab="overview">Overview</button>
+    <button data-tab="people">People</button>
+    <button data-tab="compare">Compare</button>
+    <button data-tab="explore">Explore</button>
+    <button data-tab="timeline">Day timeline</button>
+    <button data-tab="sites">Sites</button>
+    <button data-tab="dns">DNS</button>
+    <button data-tab="settings">Settings</button>
+  </nav>
+  <div id="status" class="status" title="Collector status"></div>
+</header>
+
+<section class="filters" id="filters">
+  <label>Range
+    <select id="f-preset">
+      <option value="today">Today</option>
+      <option value="yesterday">Yesterday</option>
+      <option value="7">Last 7 days</option>
+      <option value="14">Last 14 days</option>
+      <option value="30">Last 30 days</option>
+      <option value="90">Last 90 days</option>
+      <option value="365">Last 12 months</option>
+      <option value="month">This month</option>
+      <option value="lastmonth">Last month</option>
+      <option value="all">All time</option>
+      <option value="custom">Custom</option>
+    </select>
+  </label>
+  <input type="date" id="f-start" aria-label="Start date">
+  <span class="dash">–</span>
+  <input type="date" id="f-end" aria-label="End date">
+  <div class="ms" id="f-persons"></div>
+  <div class="ms" id="f-clients"></div>
+  <div class="ms" id="f-categories"></div>
+  <input type="search" id="f-q" placeholder="Site contains…" aria-label="Filter sites">
+  <label class="chk"><input type="checkbox" id="f-hidebg" checked> Hide background</label>
+  <div class="seg" id="f-metric" role="group" aria-label="Metric">
+    <button data-v="minutes">Time</button><button data-v="queries">Queries</button><button data-v="blocked">Blocked</button>
+  </div>
+</section>
+
+<main>
+  <!-- OVERVIEW -->
+  <section class="tab" id="tab-overview">
+    <div class="kpis" id="kpis"></div>
+    <div class="card wide">
+      <div class="card-h"><h2 id="ts-title">Activity over time</h2>
+        <label>Split by <select id="ov-split">
+          <option value="none">Nothing</option><option value="person">Person</option><option value="category">Category</option>
+          <option value="service">Service</option><option value="site">Site</option><option value="client">Device</option>
+        </select></label>
+      </div>
+      <div class="chart tall" id="ov-ts"></div>
+    </div>
+    <div class="grid2">
+      <div class="card"><div class="card-h"><h2>Categories</h2></div><div class="chart" id="ov-cats"></div></div>
+      <div class="card"><div class="card-h"><h2>When (avg per hour)</h2><span class="hint" id="ov-heat-note"></span></div><div class="chart" id="ov-heat"></div></div>
+    </div>
+    <div class="grid2">
+      <div class="card"><div class="card-h"><h2>Top services</h2></div><div class="chart tall" id="ov-svc"></div></div>
+      <div class="card"><div class="card-h"><h2>Top sites</h2></div><div class="tbl" id="ov-sites"></div></div>
+    </div>
+  </section>
+
+  <!-- PEOPLE -->
+  <section class="tab" id="tab-people">
+    <div class="card wide"><div class="card-h"><h2>Time per person by category</h2></div><div class="chart tall" id="pp-stack"></div></div>
+    <div class="people" id="pp-cards"></div>
+  </section>
+
+  <!-- COMPARE -->
+  <section class="tab" id="tab-compare">
+    <div class="card wide">
+      <div class="card-h">
+        <div class="seg" id="cmp-mode"><button data-v="people">People</button><button data-v="periods">Periods</button></div>
+        <label>Group by <select id="cmp-by">
+          <option value="category">Category</option><option value="service">Service</option><option value="site">Site</option>
+        </select></label>
+        <label class="chk"><input type="checkbox" id="cmp-share"> Show as share (%)</label>
+        <span class="hint" id="cmp-hint"></span>
+      </div>
+      <div id="cmp-periods" class="row hidden">
+        <span>Period B:</span>
+        <select id="cmp-b-preset"><option value="prev">Previous period</option><option value="year">Same period last year</option><option value="custom">Custom</option></select>
+        <input type="date" id="cmp-b-start"><span class="dash">–</span><input type="date" id="cmp-b-end">
+      </div>
+      <div class="chart tall" id="cmp-bars"></div>
+    </div>
+    <div class="grid2">
+      <div class="card"><div class="card-h"><h2 id="cmp-trend-title">Trend</h2></div><div class="chart" id="cmp-trend"></div></div>
+      <div class="card"><div class="card-h"><h2>Differences</h2></div><div class="tbl" id="cmp-table"></div></div>
+    </div>
+  </section>
+
+  <!-- EXPLORE -->
+  <section class="tab" id="tab-explore">
+    <div class="card wide">
+      <div class="card-h">
+        <h2>Who visits what, and when</h2>
+        <select id="ex-kind"><option value="categories">Category</option><option value="services">Service</option><option value="sites">Site</option></select>
+        <input id="ex-target" list="ex-options" placeholder="e.g. Social networks, YouTube, reddit.com" aria-label="Target">
+        <datalist id="ex-options"></datalist>
+        <button id="ex-go" class="primary">Show</button>
+      </div>
+      <div class="kpis small" id="ex-kpis"></div>
+    </div>
+    <div class="grid2">
+      <div class="card"><div class="card-h"><h2>Per person over time</h2></div><div class="chart" id="ex-ts"></div></div>
+      <div class="card"><div class="card-h"><h2>When (avg per hour)</h2></div><div class="chart" id="ex-heat"></div></div>
+    </div>
+    <div class="grid2">
+      <div class="card"><div class="card-h"><h2>By person</h2></div><div class="tbl" id="ex-persons"></div></div>
+      <div class="card"><div class="card-h"><h2>Sites in this group</h2></div><div class="tbl" id="ex-sites"></div></div>
+    </div>
+  </section>
+
+  <!-- TIMELINE -->
+  <section class="tab" id="tab-timeline">
+    <div class="card wide">
+      <div class="card-h">
+        <h2>Day timeline</h2>
+        <button id="tl-prev" aria-label="Previous day">◀</button>
+        <input type="date" id="tl-day" aria-label="Day">
+        <button id="tl-next" aria-label="Next day">▶</button>
+        <label>Rows <select id="tl-split">
+          <option value="person">Person</option><option value="category">Category</option><option value="service">Service</option>
+          <option value="site">Site</option><option value="client">Device</option>
+        </select></label>
+        <span class="hint">Each bar is a 5-minute slot with DNS activity. Uses the person/device/category filters.</span>
+      </div>
+      <div class="chart tall" id="tl-chart"></div>
+    </div>
+  </section>
+
+  <!-- SITES -->
+  <section class="tab" id="tab-sites">
+    <div class="card wide">
+      <div class="card-h"><h2>Sites</h2><span class="hint" id="st-count"></span>
+        <span class="spacer"></span>
+        <button id="st-prev">◀</button><span id="st-page"></span><button id="st-next">▶</button>
+      </div>
+      <div class="tbl" id="st-table"></div>
+    </div>
+    <div class="card wide"><div class="card-h"><h2>First seen in this range</h2></div><div class="tbl" id="st-new"></div></div>
+  </section>
+
+  <!-- DNS -->
+  <section class="tab" id="tab-dns">
+    <div class="grid2">
+      <div class="card"><div class="card-h"><h2>Responses</h2></div><div class="chart" id="dn-reasons"></div></div>
+      <div class="card"><div class="card-h"><h2>Query types</h2></div><div class="chart" id="dn-qtypes"></div></div>
+    </div>
+    <div class="grid2">
+      <div class="card"><div class="card-h"><h2>Latency, cache and block rate</h2></div><div class="chart" id="dn-perf"></div></div>
+      <div class="card"><div class="card-h"><h2>Upstreams</h2></div><div class="chart" id="dn-up"></div></div>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section class="tab" id="tab-settings">
+    <div class="grid2">
+      <div class="card">
+        <div class="card-h"><h2>Persons</h2></div>
+        <form id="person-form" class="row">
+          <input name="name" placeholder="Name" required maxlength="64">
+          <input name="color" type="color" value="#4e79a7" aria-label="Color">
+          <button class="primary">Add</button>
+        </form>
+        <div class="tbl" id="persons-table"></div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h2>Category rules</h2></div>
+        <p class="hint">A rule matches a domain and all its subdomains. Your rules override the built-in list and AdGuard's service catalogue. History is re-categorized automatically.</p>
+        <form id="rule-form" class="row">
+          <input name="pattern" placeholder="example.com" required>
+          <input name="category" placeholder="Category" list="cat-options" required>
+          <input name="service" placeholder="Service (optional)">
+          <button class="primary">Save</button>
+        </form>
+        <datalist id="cat-options"></datalist>
+        <div class="hint" id="rules-info"></div>
+        <div class="tbl" id="rules-table"></div>
+      </div>
+    </div>
+    <div class="card wide">
+      <div class="card-h"><h2>Devices</h2><span class="hint">Assign each device (IP) to a person. Assignments apply to all history.</span></div>
+      <div class="tbl" id="clients-table"></div>
+    </div>
+    <div class="card wide"><div class="card-h"><h2>Collector</h2></div><div id="collector-info" class="mono"></div></div>
+  </section>
+</main>
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="app.js"></script>
+</body>
+</html>
