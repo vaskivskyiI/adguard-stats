@@ -10,6 +10,7 @@ See who uses which sites and categories, when, and roughly for how long, across 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Python 3.12](https://img.shields.io/badge/python-3.12-3776ab.svg)
 ![Podman](https://img.shields.io/badge/runs%20on-podman-892ca0.svg)
+[![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-support%20the%20project-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/ivaskivskyi)
 
 ![Overview](docs/screenshots/overview.png)
 
@@ -190,8 +191,12 @@ Layout: `app/collector.py` (polling and aggregation), `app/api.py` (HTTP API and
 
 ## Support the project
 
-If AdGuard Stats is useful to you, a star on GitHub helps others find it. Bug reports, category rules
-and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
+If AdGuard Stats is useful to you, you can buy me a coffee on Ko-fi. It keeps the project going:
+
+<a href="https://ko-fi.com/ivaskivskyi"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support me on Ko-fi" height="36"></a>
+
+A star on GitHub also helps others find it. Bug reports, category rules and pull requests are
+welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
