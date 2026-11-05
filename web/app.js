@@ -68,7 +68,8 @@ function params(extra = {}) {
 }
 async function api(path, extra, opts) {
   const url = opts ? path : `${path}?${params(extra)}`;
-  const r = await fetch(url, opts);
+  // resolve against origin + path: a page URL with user:password@ makes relative fetches fail
+  const r = await fetch(new URL(url, location.origin + location.pathname), opts);
   if (!r.ok) {
     let msg = r.statusText;
     try { const j = await r.json(); msg = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail); } catch { /* not json */ }
@@ -237,9 +238,14 @@ async function loadMeta() {
   const st = META.collector || {};
   const el = $('#status');
   el.className = 'status' + (st.last_error ? ' err' : (st.backfilling || st.regroup_pending) ? ' busy' : '');
-  el.textContent = st.last_error ? 'AdGuard unreachable' : st.backfilling ? 'Importing history…' : st.regroup_pending ? `Re-categorizing (${st.regroup_pending} days)` :
+  el.textContent = st.last_error ? 'Collector error' : st.backfilling ? `Importing history… (at ${st.backfill_at ? new Date(st.backfill_at).toLocaleString() : 'start'})` : st.regroup_pending ? `Re-categorizing (${st.regroup_pending} days)` :
     st.last_success ? 'Updated ' + new Date(st.last_success * 1000).toLocaleTimeString() : 'Starting…';
   el.title = st.last_error || `Source: ${META.adguard_url}`;
+  if (!META.auth) {
+    el.className = 'status err';
+    el.textContent = 'No password set: ' + el.textContent;
+    el.title = 'DASHBOARD_PASSWORD is empty, so anyone who can reach this page sees the stats. Set it in .env.';
+  }
   $('#cat-options').innerHTML = META.categories.map(c => `<option value="${esc(c)}">`).join('');
 }
 

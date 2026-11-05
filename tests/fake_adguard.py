@@ -82,15 +82,39 @@ CLIENTS = {
         {"name": "Anna DoH phone", "ids": ["anna-doh"]},
     ],
     "auto_clients": [{"ip": "192.168.1.41", "name": "nas.lan", "source": "rDNS"},
-                     {"ip": "192.168.1.10", "name": "anna-phone", "source": "DHCP"}],
+                     {"ip": "192.168.1.10", "name": "anna-phone", "source": "DHCP"},
+                     {"ip": "ff02::1", "name": "ip6-allnodes", "source": "etc/hosts"},
+                     {"ip": "127.0.1.1", "name": "server", "source": "etc/hosts"}],
 }
 DHCP = {"enabled": True, "leases": [{"mac": "aa:bb:cc:dd:ee:01", "ip": "192.168.1.42", "hostname": "tablet"}],
         "static_leases": [{"mac": "aa:bb:cc:dd:ee:02", "ip": "192.168.1.43", "hostname": "doorbell"}]}
 ROUTES = {"/control/blocked_services/all": SERVICES, "/control/clients": CLIENTS, "/control/dhcp/status": DHCP}
 
 
+def parse_time(s):
+    return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+
+
+def querylog_page(entries, older_than="", offset=0, limit=500, unseekable=()):
+    """GET /control/querylog the way AdGuard Home answers it (entries are newest-first).
+
+    AdGuard seeks to `older_than` by binary search for that exact timestamp in its log file; when
+    the search fails it returns an empty page. `unseekable` lists timestamps whose seek fails.
+    """
+    start = 0
+    if older_than:
+        if older_than in unseekable:
+            return {"data": [], "oldest": ""}
+        t = parse_time(older_than)
+        neg = [-parse_time(e["time"]) for e in entries]  # ascending
+        start = bisect_left(neg, -t)
+        while start < len(entries) and parse_time(entries[start]["time"]) >= t:
+            start += 1
+    page = entries[start + offset:start + offset + limit]
+    return {"data": page, "oldest": page[-1]["time"] if page else ""}
+
+
 def serve(entries, port):
-    times = [e["time"] for e in entries][::-1]  # ascending, for bisect
 
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a):
@@ -100,12 +124,8 @@ def serve(entries, port):
             u = urlparse(self.path)
             qp = parse_qs(u.query)
             if u.path == "/control/querylog":
-                limit = int(qp.get("limit", ["500"])[0])
-                older = qp.get("older_than", [""])[0]
-                # entries are newest-first; find first index strictly older than `older`
-                i = 0 if not older else len(times) - bisect_left(times, older)
-                page = entries[i:i + limit]
-                body = {"data": page, "oldest": page[-1]["time"] if page else ""}
+                body = querylog_page(entries, qp.get("older_than", [""])[0], int(qp.get("offset", ["0"])[0]),
+                                     int(qp.get("limit", ["500"])[0]))
             elif u.path in ROUTES:
                 body = ROUTES[u.path]
             else:

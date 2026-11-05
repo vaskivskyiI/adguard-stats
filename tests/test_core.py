@@ -16,13 +16,13 @@ class FakeAPI:
         self.entries = sorted(entries, key=lambda e: e["time"], reverse=True)
         self.fail_after = None
         self.calls = 0
+        self.unseekable = set()
 
-    def querylog(self, older_than=""):
+    def querylog(self, older_than="", offset=None):
         self.calls += 1
         if self.fail_after is not None and self.calls > self.fail_after:
             raise ConnectionError("simulated outage")
-        page = [e for e in self.entries if not older_than or e["time"] < older_than][:col.PAGE_SIZE]
-        return {"data": page, "oldest": page[-1]["time"] if page else ""}
+        return fake_adguard.querylog_page(self.entries, older_than, offset or 0, col.PAGE_SIZE, self.unseekable)
 
     def get(self, path):
         return fake_adguard.ROUTES[path]
@@ -171,5 +171,66 @@ def test_known_clients_and_client_ids(make_collector):
     assert rows["192.168.1.43"] == "doorbell"                   # static DHCP lease
     assert rows["192.168.1.41"] == "nas.lan"                    # runtime client
     assert "10.0.0.0/24" not in rows and "203.0.113.9" not in rows
+    assert "ff02::1" not in rows and "127.0.1.1" not in rows      # /etc/hosts entries, not devices
     seen = c.conn.execute("SELECT ip FROM clients WHERE last_seen IS NOT NULL ORDER BY ip").fetchall()
     assert seen == [("192.168.1.10",), ("anna-doh",)]           # DoH queries counted under the ClientID
+
+
+def test_backfill_survives_failed_seeks(make_collector):
+    base = datetime(2026, 3, 1, tzinfo=timezone.utc)
+    entries = [entry(base + timedelta(seconds=7 * i), f"10.0.0.{i % 3}", f"site{i % 40}.com") for i in range(4000)]
+    c = make_collector(entries)
+    newest_first = c.api.entries
+    # AdGuard cannot seek to the end of pages 1 and 3 and returns an empty page there
+    c.api.unseekable = {newest_first[col.PAGE_SIZE - 1]["time"], newest_first[3 * col.PAGE_SIZE - 1]["time"]}
+    while c.poll():
+        pass
+    assert totals(c.conn)[0] == 4000
+    assert db.get_state(c.conn, "history_done") == "1"
+    c.api.entries = sorted(entries + [entry(base + timedelta(days=1), "10.0.0.1", "new.com")],
+                           key=lambda e: e["time"], reverse=True)
+    while c.poll():
+        pass
+    assert totals(c.conn)[0] == 4001
+
+
+def test_import_history_skipped_by_older_versions(make_collector):
+    base = datetime(2026, 3, 1, tzinfo=timezone.utc)
+    entries = [entry(base + timedelta(seconds=7 * i), f"10.0.0.{i % 3}", f"site{i % 40}.com") for i in range(3000)]
+    c = make_collector(entries[2000:])            # an old version imported only the newest 1000
+    while c.poll():
+        pass
+    db.set_state(c.conn, "history_done", None)    # old versions did not record it
+    c.conn.commit()
+    c = make_collector(entries)                   # restart with the full log available
+    assert db.get_state(c.conn, "floor") is not None
+    while c.poll():
+        pass
+    assert totals(c.conn)[0] == 3000
+
+
+def test_periodic_traffic_and_person_overlap(make_collector, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import api
+
+    day = datetime(2026, 3, 3, tzinfo=timezone.utc)
+    es = [entry(day + timedelta(minutes=5 * i), "10.0.0.50", "vendor-cloud.net") for i in range(288)]  # all day
+    for ip in ("10.0.0.1", "10.0.0.2"):            # one person, two devices, same hour
+        es += [entry(day + timedelta(hours=10, minutes=5 * i), ip, "example.org") for i in range(12)]
+    c = make_collector(es)
+    while c.poll():
+        pass
+    cats = dict(c.conn.execute("SELECT name, category FROM domains"))
+    assert cats["vendor-cloud.net"] == categories.AUTO and cats["example.org"] == categories.OTHER
+    api.collector = c
+    client = TestClient(api.app)
+    pid = client.post("/api/persons", json={"name": "P"}).json()["id"]
+    for cl in client.get("/api/meta").json()["clients"]:
+        if cl["ip"] in ("10.0.0.1", "10.0.0.2"):
+            client.put(f"/api/clients/{cl['id']}", json={"person_id": pid})
+    monkey = {"start": "2026-03-03", "end": "2026-03-03"}
+    monkeypatch.setattr(api, "hourly_since", lambda: datetime(2026, 1, 1).date())
+    s = client.get("/api/summary", params=monkey).json()["current"]
+    assert s["minutes"] == 60                      # IoT excluded; overlapping devices counted once
+    rows = {r["name"]: r["minutes"] for r in client.get("/api/top", params={**monkey, "by": "client"}).json()["rows"]}
+    assert rows["dev-10.0.0.1"] == 60 and rows["dev-10.0.0.2"] == 60

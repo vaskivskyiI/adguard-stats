@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS clients(
 CREATE TABLE IF NOT EXISTS domains(
   id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, service TEXT,
   category TEXT NOT NULL DEFAULT 'Other', autoblock INTEGER NOT NULL DEFAULT 0,
-  first_seen INTEGER, first_client INTEGER);
+  first_seen INTEGER, first_client INTEGER, periodic INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS rules(
   pattern TEXT NOT NULL, source TEXT NOT NULL, service TEXT, category TEXT NOT NULL,
   PRIMARY KEY(pattern, source));
@@ -56,6 +56,20 @@ def popcount(x):
     return int(x).bit_count() if x else 0
 
 
+class BitOr:
+    """Aggregate: bitwise OR of slot masks (union of active slots across rows)."""
+
+    def __init__(self):
+        self.v = 0
+
+    def step(self, x):
+        if x:
+            self.v |= x
+
+    def finalize(self):
+        return self.v
+
+
 def connect(path=None):
     conn = sqlite3.connect(path or config.DB_PATH, timeout=30, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
@@ -63,12 +77,16 @@ def connect(path=None):
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA busy_timeout=30000")
     conn.create_function("popcount", 1, popcount, deterministic=True)
+    conn.create_aggregate("bitor", 1, BitOr)
     return conn
 
 
 def init(path=None):
     conn = connect(path)
     conn.executescript(SCHEMA)
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(domains)")}
+    if "periodic" not in cols:  # added in 0.2
+        conn.execute("ALTER TABLE domains ADD COLUMN periodic INTEGER NOT NULL DEFAULT 0")
     conn.commit()
     return conn
 

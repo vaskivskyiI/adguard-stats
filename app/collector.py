@@ -3,6 +3,14 @@
 The query log is read newest-first. A "run" walks pages from the newest entry back to the
 cursor (newest entry already ingested). Each page is ingested in one transaction together with
 the run position, so a crash or restart never counts an entry twice.
+
+Until the whole log has been read once ("history"), a run continues past the cursor to the end
+of the log and also imports entries older than `floor` (the oldest entry already ingested).
+
+AdGuard pages with `older_than=<time of the last entry>`, which it finds by binary search for that
+exact timestamp. The log file is not strictly time-ordered, so the search sometimes fails and AdGuard
+returns an empty page although older entries exist. The collector then re-locates its position
+with `offset` (a linear scan, used only for this) instead of treating the page as the end.
 """
 import base64
 import ipaddress
@@ -24,6 +32,8 @@ log = logging.getLogger("collector")
 
 PAGE_SIZE = 500
 PAGES_PER_CHUNK = 100          # pages ingested before dirty days are re-aggregated
+RECOVERY_TRIES = 20            # offset lookups per page when AdGuard cannot seek
+PERIODIC_HOURS = 18            # an unknown domain queried in this many hours of a day is machine traffic
 SERVICES_REFRESH = 24 * 3600
 CLIENTS_REFRESH = 600
 MAC = re.compile(r"^[0-9a-f]{2}([:-][0-9a-f]{2}){5}$")
@@ -70,9 +80,13 @@ def client_key(e):
 
 
 def norm_key(k):
-    """Canonical IP (as AdGuard writes it in the query log) or ClientID; None if neither."""
+    """Canonical IP (as AdGuard writes it in the query log) or ClientID; None if neither, or if the
+    address cannot be a device (loopback, multicast, ... e.g. from /etc/hosts)."""
     try:
-        return str(ipaddress.ip_address(k))
+        ip = ipaddress.ip_address(k)
+        if ip.is_loopback or ip.is_multicast or ip.is_unspecified or ip.is_reserved:
+            return None
+        return str(ip)
     except ValueError:
         return k if re.fullmatch(r"[a-z0-9-]{1,64}", k) else None
 
@@ -93,8 +107,11 @@ class AdGuard:
         with urlopen(req, timeout=60, context=self.ctx) as r:
             return json.load(r)
 
-    def querylog(self, older_than=""):
-        return self.get("/control/querylog", {"older_than": older_than, "limit": PAGE_SIZE})
+    def querylog(self, older_than="", offset=None):
+        params = {"older_than": older_than, "limit": PAGE_SIZE}
+        if offset is not None:
+            params["offset"] = offset
+        return self.get("/control/querylog", params)
 
 
 class Ingester:
@@ -123,6 +140,12 @@ class Ingester:
         for key, name in known.items():
             self._client(key, name)
         self.conn.executemany("UPDATE clients SET name=? WHERE ip=?", [(n, k) for k, n in known.items() if n])
+        # drop non-device addresses an earlier version imported and that never sent a query
+        junk = [(cid,) for ip, cid in self.clients.items() if norm_key(ip) is None and ip != "unknown"]
+        if junk:
+            self.conn.executemany(
+                "DELETE FROM clients WHERE id=? AND first_seen IS NULL AND person_id IS NULL AND label IS NULL", junk)
+            self.clients = {ip: cid for cid, ip in self.conn.execute("SELECT id, ip FROM clients")}
 
     def _domain(self, site, adblocked):
         hit = self.domains.get(site)
@@ -212,6 +235,19 @@ class Ingester:
         return set(day_of_hour.values())
 
 
+def mark_periodic(conn, start, end):
+    """Mark uncategorized domains that some device queried in at least PERIODIC_HOURS distinct hours
+    of [start, end) as machine traffic (IoT clouds, sync, telemetry). People do not use one site
+    around the clock; devices that phone home do. Returns the number of newly marked domains."""
+    ids = [r[0] for r in conn.execute(
+        "SELECT DISTINCT domain_id FROM (SELECT h.client_id, h.domain_id FROM hourly h "
+        "JOIN domains d ON d.id=h.domain_id WHERE d.periodic=0 AND d.category=? AND h.hour>=? AND h.hour<? "
+        "GROUP BY h.client_id, h.domain_id HAVING COUNT(*)>=?)",
+        (categories.OTHER, start, end, PERIODIC_HOURS))]
+    conn.executemany("UPDATE domains SET periodic=1, category=? WHERE id=?", [(categories.AUTO, i) for i in ids])
+    return len(ids)
+
+
 def rebuild_day(conn, day: int):
     """Recompute daily, group_hourly and group_daily for one local day from hourly."""
     start, end = db.day_bounds(db.int_day(day))
@@ -254,7 +290,7 @@ class Collector:
         self.regroup_days = []
         self.status = {
             "last_poll": None, "last_success": None, "last_error": None,
-            "ingested_total": 0, "backfilling": False, "regroup_pending": 0,
+            "ingested_total": 0, "backfilling": False, "backfill_at": None, "regroup_pending": 0,
         }
         self._next_services = 0
         self._next_clients = 0
@@ -262,6 +298,12 @@ class Collector:
         with self.lock:
             categories.replace_rules(self.conn, "builtin", categories.builtin_rules())
             self._apply_rule_change()
+            if db.get_state(self.conn, "history_done") is None and db.get_state(self.conn, "floor") is None:
+                # Earlier versions could stop importing history early: import what is older than
+                # the oldest entry already held.
+                floor = self.conn.execute("SELECT MIN(first_seen) FROM clients").fetchone()[0]
+                if floor is not None:
+                    db.set_state(self.conn, "floor", floor)
             self.conn.commit()
 
     # --- categorization ----------------------------------------------------
@@ -326,10 +368,54 @@ class Collector:
 
     def _flush_dirty(self):
         dirty = self._dirty()
+        if dirty:
+            now = int(time.time())
+            windows = [db.day_bounds(db.int_day(d)) for d in dirty] + [(now - 86400, now)]
+            if sum(mark_periodic(self.conn, a, b) for a, b in windows):
+                self.schedule_regroup()  # other days still count the newly marked domains
         for d in sorted(dirty):
             rebuild_day(self.conn, d)
         db.set_state(self.conn, "dirty_days", None)
         self.conn.commit()
+
+    def _run_state(self):
+        c = self.conn
+        floor = db.get_state(c, "floor")
+        return {
+            "top": float(db.get_state(c, "run_top")), "stop": float(db.get_state(c, "run_stop")),
+            "older": db.get_state(c, "run_older", ""), "pos": float(db.get_state(c, "run_pos", "inf")),
+            "seen": int(db.get_state(c, "run_seen", "0")),
+            "history": db.get_state(c, "history_done") is None,
+            "floor": float(floor) if floor is not None else None,
+        }
+
+    def _fetch(self, st):
+        """Next page of the run -> (entries older than the run position, next older_than).
+        Returns (None, None) at the end of the log."""
+        def fresh_of(data):
+            entries = [(parse_time(e["time"]), e) for e in data]
+            return [(ts, e) for ts, e in entries if ts < st["pos"] and ts <= st["top"]]
+
+        page = self.api.querylog(st["older"])
+        data = page.get("data") or []
+        oldest = page.get("oldest") or ""
+        if data:
+            return fresh_of(data), oldest
+        if oldest and (not st["older"] or parse_time(oldest) < parse_time(st["older"])):
+            return [], oldest  # AdGuard stopped scanning early; continue from where it stopped
+        # Empty page: the end of the log, or AdGuard failed to seek. Re-locate by offset.
+        offset = st["seen"]
+        for _ in range(RECOVERY_TRIES):
+            page = self.api.querylog("", offset)
+            data = page.get("data") or []
+            if not data:
+                return None, None
+            fresh = fresh_of(data)
+            if fresh:
+                return fresh, page.get("oldest") or ""
+            offset += len(data)  # entries newer than the run position: newer ones arrived meanwhile
+            st["seen"] = offset
+        raise RuntimeError("cannot locate the query log position; will retry")
 
     def poll(self):
         """Ingest up to PAGES_PER_CHUNK pages. Returns True if more pages are waiting."""
@@ -343,39 +429,45 @@ class Collector:
                     return False
                 top = parse_time(data[0]["time"])
                 cursor = float(db.get_state(c, "cursor", "0"))
-                if top <= cursor:
+                if top <= cursor and db.get_state(c, "history_done") is not None:
                     return False
-                db.set_state(c, "run_top", top)
+                db.set_state(c, "run_top", max(top, cursor))
                 db.set_state(c, "run_stop", cursor)
-                db.set_state(c, "run_older", "")
+                for k in ("run_older", "run_pos", "run_seen"):
+                    db.set_state(c, k, None)
                 c.commit()
         more = True
         for _ in range(PAGES_PER_CHUNK):
             with self.lock:
-                top = float(db.get_state(c, "run_top"))
-                stop = float(db.get_state(c, "run_stop"))
-                older = db.get_state(c, "run_older", "")
-            page = self.api.querylog(older)
-            data = page.get("data") or []
-            batch, finished = [], not data or not page.get("oldest")
-            for e in data:
-                ts = parse_time(e["time"])
-                if ts <= stop:
-                    finished = True
-                    break
-                if ts <= top:
+                st = self._run_state()
+            fresh, older = self._fetch(st)
+            finished = fresh is None  # end of the log
+            batch = []
+            for ts, e in fresh or []:
+                if ts > st["stop"] or (st["history"] and (st["floor"] is None or ts < st["floor"])):
                     batch.append((ts, e))
+                elif not st["history"]:
+                    finished = True  # reached what earlier runs ingested
+                    break
             with self.lock:
                 days = self.ingester.ingest(batch)
                 db.set_state(c, "dirty_days", ",".join(map(str, self._dirty() | days)))
                 if finished:
-                    db.set_state(c, "cursor", top)
-                    for k in ("run_top", "run_stop", "run_older"):
+                    db.set_state(c, "cursor", st["top"])
+                    if fresh is None:
+                        db.set_state(c, "history_done", 1)
+                        db.set_state(c, "floor", None)
+                    for k in ("run_top", "run_stop", "run_older", "run_pos", "run_seen"):
                         db.set_state(c, k, None)
                 else:
-                    db.set_state(c, "run_older", page["oldest"])
+                    if fresh:
+                        db.set_state(c, "run_pos", min(t for t, _ in fresh))
+                    db.set_state(c, "run_older", older)
+                    db.set_state(c, "run_seen", st["seen"] + len(fresh))
                 c.commit()
             self.status["ingested_total"] += len(batch)
+            if fresh:
+                self.status["backfill_at"] = min(t for t, _ in fresh) * 1000
             if finished:
                 more = False
                 break

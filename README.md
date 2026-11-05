@@ -157,12 +157,20 @@ of, say, Instagram in a 5-minute slot, that slot counts as 5 minutes on Instagra
 services and overall time, the slots of all their domains are combined first, so `instagram.com` and
 `cdninstagram.com` queried in the same slot count once.
 
-This is an approximation:
+Two corrections keep the numbers close to what people actually do:
+- **Automatic traffic.** An uncategorized domain that a device queries in at least 18 different hours
+  of a day (IoT vendor clouds, sync clients, weather widgets, your own server) is marked
+  "Automatic traffic", a background category. People do not use one site around the clock;
+  devices that phone home do. Give the domain a category in **Sites** to override this.
+- **One person, many devices.** When several of a person's devices are active in the same 5-minute
+  slot, that slot counts once for the person and in totals. Unassigned devices count on their own.
+  This needs hour-level data, so ranges older than `HOURLY_RETENTION_DAYS` add devices up instead.
+
+It is still an approximation:
 - DNS caching on the device hides repeated visits within a record's TTL, so short sessions can be
   undercounted.
 - Apps open in the background (messengers, social apps) query periodically, so they can be overcounted.
 - Background categories are left out of the overall "active time".
-- Time per person adds up the person's devices, so a phone and a laptop in use at the same time count twice.
 
 Treat the numbers as a way to compare people, days and categories, not as exact screen time.
 
@@ -186,7 +194,8 @@ Raw query-log entries are never stored. Each poll folds them into aggregate tabl
 - Long ranges are answered from the `daily` tables. Heatmaps, timelines and ranges up to 3 days use the
   hourly tables.
 - The query log is read newest first, and each page is committed together with the read position,
-  so restarts and AdGuard outages never count a query twice.
+  so restarts and AdGuard outages never count a query twice. On first start the whole log is
+  imported; the status in the top bar shows how far back the import has got.
 
 Measured: a year of data for 10 devices (about 2.3 M hourly and 0.7 M daily rows, 173 MB) answers every
 dashboard query in under 1 s.

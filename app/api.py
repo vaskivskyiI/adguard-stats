@@ -28,6 +28,8 @@ collector: Optional[Collector] = None
 @asynccontextmanager
 async def lifespan(_app):
     global collector
+    if not config.DASHBOARD_PASSWORD:
+        logging.getLogger("api").warning("DASHBOARD_PASSWORD is empty: anyone who can reach the port sees the stats")
     collector = Collector()
     collector.start()
     yield
@@ -235,6 +237,9 @@ def source(f, metric, splits, hourly, value=None):
 
 def agg(conn, f, metric, splits=(), bucket=None):
     """Rows of (*split_keys, bucket, value). bucket: None | 'day' | 'hour'. Minutes are real minutes."""
+    if (metric == "minutes" and "client" not in splits and minute_source(f, splits) != "domain"
+            and f.start >= hourly_since()):
+        return agg_per_person(conn, f, splits, bucket)
     hourly = bucket == "hour"
     frm, keys, val, params = source(f, metric, splits, hourly)
     b = {"hour": "x.hour", "day": "x.day"}.get(bucket, "NULL")
@@ -244,6 +249,25 @@ def agg(conn, f, metric, splits=(), bucket=None):
     rows = conn.execute(sql, params).fetchall()
     mult = SM if metric == "minutes" else 1
     return [(*r[:-1], (r[-1] or 0) * mult) for r in rows]
+
+
+def agg_per_person(conn, f, splits, bucket):
+    """Like agg() for minutes, but a person's devices active in the same 5-minute slot count once.
+    Unassigned devices count separately. Needs hour-level data (slot masks)."""
+    frm, keys, _, params = source(f, "minutes", splits, True)
+    unit = "CASE WHEN c.person_id IS NULL THEN -x.client_id ELSE c.person_id END"
+    sel = [f"{k} AS k{i}" for i, k in enumerate(keys)] + ["x.hour AS h", f"{unit} AS u", "popcount(bitor(x.slots))"]
+    group = [f"k{i}" for i in range(len(keys))] + ["h", "u"]
+    out, day_of = Counter(), {}
+    for *k, h, _, v in conn.execute(f"SELECT {', '.join(sel)} {frm} GROUP BY {', '.join(group)}", params):
+        if bucket == "hour":
+            b = h
+        elif bucket == "day":
+            b = day_of.get(h) or day_of.setdefault(h, db.local_day_of(h))
+        else:
+            b = None
+        out[(*k, b)] += v
+    return [(*k, v * SM) for k, v in out.items()]
 
 
 def hourly_since():
@@ -609,6 +633,7 @@ def meta(conn=Depends(get_conn)):
         "hourly_since": hourly_since().isoformat(), "slot_minutes": SM, "timezone": str(config.TZ),
         "today": datetime.now(config.TZ).date().isoformat(),
         "collector": collector.status if collector else None, "adguard_url": config.ADGUARD_URL,
+        "auth": bool(config.DASHBOARD_PASSWORD),
     }
 
 

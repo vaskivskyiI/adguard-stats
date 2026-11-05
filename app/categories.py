@@ -17,9 +17,12 @@ SOURCE_PRIORITY = {"user": 0, "builtin": 1, "adguard": 2}
 OTHER = "Other"
 ADS = "Ads & tracking"
 LOCAL = "Local network"
+# Uncategorized domains a device queries around the clock (IoT clouds, sync, telemetry); see
+# collector.mark_periodic. A user rule for the domain overrides it.
+AUTO = "Automatic traffic"
 # Traffic devices generate on their own; excluded from "active time" and hidden by the dashboard's
 # "hide background" switch.
-BACKGROUND = {ADS, "Infrastructure", "Software & updates", "Smart home & IoT", LOCAL}
+BACKGROUND = {ADS, "Infrastructure", "Software & updates", "Smart home & IoT", LOCAL, AUTO}
 
 ADGUARD_GROUPS = {
     "social_network": "Social networks",
@@ -109,24 +112,24 @@ class Matcher:
             return pattern
         return base
 
-    def classify(self, site, autoblock=False):
+    def classify(self, site, autoblock=False, periodic=False):
         """-> (service, category) for a site key."""
         _, hit = self._lookup(site)
         if hit:
             return hit[1], hit[2]
         if site.endswith(".arpa") or "." not in site or not _extract(site).suffix:
             return None, LOCAL
-        return None, ADS if autoblock else OTHER
+        return None, ADS if autoblock else AUTO if periodic else OTHER
 
 
 def recategorize_domains(conn):
     """Re-apply rules to every known domain. Returns number of domains whose classification changed."""
     m = Matcher(conn)
     changed = []
-    for did, name, service, category, autoblock in conn.execute(
-        "SELECT id, name, service, category, autoblock FROM domains"
+    for did, name, service, category, autoblock, periodic in conn.execute(
+        "SELECT id, name, service, category, autoblock, periodic FROM domains"
     ).fetchall():
-        s, c = m.classify(name, bool(autoblock))
+        s, c = m.classify(name, bool(autoblock), bool(periodic))
         if (s, c) != (service, category):
             changed.append((s, c, did))
     conn.executemany("UPDATE domains SET service=?, category=? WHERE id=?", changed)
